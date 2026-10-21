@@ -19,6 +19,7 @@ public class MainActivity extends Activity {
     private NativeAudioEngine engine;
     private boolean pendingStart = false;
     private boolean requestedMonitor = false;
+    private boolean requestedMehfil = false;
     private String requestedDevice = "default";
 
     @Override public void onCreate(Bundle b) {
@@ -59,7 +60,7 @@ public class MainActivity extends Activity {
             postEvent("hint", "Grant Nearby devices permission, then tap START again for earbuds mic.");
             return;
         }
-        engine.start(requestedDevice, requestedMonitor);
+        engine.start(requestedDevice, requestedMonitor, requestedMehfil);
     }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -78,8 +79,16 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void start(String deviceId, boolean monitor) {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
+            requestedMehfil = false;
             runOnUiThread(MainActivity.this::startRequested);
         }
+        @JavascriptInterface public void startMehfil(String deviceId, boolean monitor) {
+            requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
+            requestedMonitor = monitor;
+            requestedMehfil = true;
+            runOnUiThread(MainActivity.this::startRequested);
+        }
+        @JavascriptInterface public void mix(double vocal, double instrument) { engine.setMixLevels(vocal, instrument); }
         @JavascriptInterface public void stop() { engine.stop(); }
         @JavascriptInterface public void params(double level, double feedback, int ms, String mode, int gateDb, double master, boolean bypass) {
             engine.setParameters(level, feedback, ms, mode, gateDb, master, bypass);
