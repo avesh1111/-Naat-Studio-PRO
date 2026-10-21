@@ -48,6 +48,9 @@ public final class NativeAudioEngine {
     private volatile boolean monitor = false;
     private volatile boolean warp = false;
     private volatile double level = .6, feedback = .25, master = .15;
+    private volatile double vocalVolume = .65, instrumentVolume = .55;
+    private volatile boolean mehfil = false;
+    private int wavChannels = 1;
     private volatile int delayMs = 380, gateDb = -50;
     private volatile boolean bypass = false;
     private volatile String mode = "WARM";
@@ -83,6 +86,9 @@ public final class NativeAudioEngine {
         master = clamp(vol, 0, 1.0);
         bypass = isBypass;
     }
+    void setMixLevels(double mic, double inst) {
+        vocalVolume = clamp(mic, 0, 1); instrumentVolume = clamp(inst, 0, 1);
+    }
     void setWarp(boolean b) { warp = b; }
     synchronized void loopCommand(String action) {
         if (!running.get()) { emit("hint", "Start native mic before using LOOP."); return; }
@@ -116,6 +122,11 @@ public final class NativeAudioEngine {
                 JSONObject o = new JSONObject();
                 o.put("id", String.valueOf(d.getId()));
                 o.put("name", d.getProductName().toString() + " (" + deviceKind(d.getType()) + ")");
+                int t = d.getType();
+                o.put("kind", t == AudioDeviceInfo.TYPE_USB_DEVICE || t == AudioDeviceInfo.TYPE_USB_HEADSET ? "usb"
+                    : t == AudioDeviceInfo.TYPE_BUILTIN_MIC ? "phone"
+                    : t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= 31 && t == AudioDeviceInfo.TYPE_BLE_HEADSET) ? "bt" : "other");
+                o.put("channelCounts", java.util.Arrays.toString(d.getChannelCounts()));
                 found.put(o);
             }
         } catch (Exception e) { emit("hint", "Some input devices require Nearby devices permission."); }
@@ -130,7 +141,14 @@ public final class NativeAudioEngine {
     }
     @SuppressLint("MissingPermission")
     synchronized void start(String requestedDevice, boolean doMonitor) {
+        start(requestedDevice, doMonitor, false);
+    }
+    synchronized void start(String requestedDevice, boolean doMonitor, boolean mehfilMode) {
         stop();
+        mehfil = mehfilMode;
+        if (mehfilMode && (requestedDevice == null || "default".equals(requestedDevice))) {
+            emit("error", "Live Mehfil requires a 2-channel USB audio interface. Select USB input."); return;
+        }
         boolean chosenBluetooth = false;
         AudioDeviceInfo chosen = null;
         if (requestedDevice != null && !"default".equals(requestedDevice)) {
@@ -140,6 +158,9 @@ public final class NativeAudioEngine {
                 }
             } catch (SecurityException err) { emit("hint", "Nearby devices permission is required for Bluetooth input."); }
             if (chosen == null) { emit("error", "Selected mic disappeared. Choose Android default and retry."); return; }
+            if (mehfilMode && chosen.getType() != AudioDeviceInfo.TYPE_USB_DEVICE && chosen.getType() != AudioDeviceInfo.TYPE_USB_HEADSET) {
+                emit("error", "Live Mehfil requires a USB audio interface with two independent inputs."); return;
+            }
             chosenBluetooth = chosen.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                 (Build.VERSION.SDK_INT >= 31 && chosen.getType() == AudioDeviceInfo.TYPE_BLE_HEADSET);
         }
@@ -154,10 +175,10 @@ public final class NativeAudioEngine {
             for (int rate : new int[]{48000, 44100}) {
                 for (int src : new int[]{MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_COMMUNICATION}) {
                     try {
-                        int minimum = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+                        int minimum = AudioRecord.getMinBufferSize(rate, mehfilMode ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
                         if (minimum <= 0) continue;
                         AudioFormat f = new AudioFormat.Builder().setSampleRate(rate)
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mehfilMode ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO).build();
                         AudioRecord r = new AudioRecord.Builder().setAudioSource(src).setAudioFormat(f)
                             .setBufferSizeInBytes(Math.max(minimum * 2, 8192)).build();
                         if (r.getState() == AudioRecord.STATE_INITIALIZED) { candidate = r; workingRate = rate; break; }
@@ -175,27 +196,35 @@ public final class NativeAudioEngine {
             try { if (AcousticEchoCanceler.isAvailable()) { aec = AcousticEchoCanceler.create(sessionId); if (aec != null) aec.setEnabled(false); } } catch (Exception ignored) {}
             try { if (NoiseSuppressor.isAvailable()) { ns = NoiseSuppressor.create(sessionId); if (ns != null) ns.setEnabled(false); } } catch (Exception ignored) {}
             if (chosen != null) {
-                if (!input.setPreferredDevice(chosen)) emit("hint", "Android did not accept preferred mic routing. Recording source may differ.");
+                if (!input.setPreferredDevice(chosen)) {
+                    if (mehfilMode) throw new IllegalStateException("Cannot route selected USB interface; verify OTG connection.");
+                    emit("hint", "Android did not accept preferred mic routing. Recording source may differ.");
+                }
             }
-            int trackMin = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+            int trackMin = AudioTrack.getMinBufferSize(sampleRate, mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (trackMin <= 0) trackMin = 8192;
             output = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 .setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                    .setSampleRate(sampleRate).setChannelMask(mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO).build())
                 .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(trackMin * 2, 8192)).build();
             if (output.getState() != AudioTrack.STATE_INITIALIZED) throw new IllegalStateException("Cannot open audio output.");
             initDSP();
             monitor = doMonitor;
             input.startRecording();
             if (input.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) throw new IllegalStateException("Microphone was rejected by Android audio service.");
+            if (mehfilMode) {
+                AudioDeviceInfo actual = input.getRoutedDevice();
+                if (actual == null || chosen == null || actual.getId() != chosen.getId())
+                    throw new IllegalStateException("USB input routing is unconfirmed. Cannot safely separate mic/instruments.");
+            }
             if (monitor) output.play();
             running.set(true);
             worker = new Thread(this::processStream, "NaatStudioAudioEngine");
             worker.setPriority(Thread.MAX_PRIORITY);
             worker.start();
-            emit("status", "MIC CONNECTED • Native AudioRecord • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth requested" : ""));
+            emit("status", "MIC CONNECTED • " + (mehfilMode ? "MEHFIL 2-CHANNEL USB" : "Native AudioRecord") + " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth requested" : ""));
         } catch (Exception e) {
             emit("error", "Mic could not start: " + e.getMessage() + ". Close other mic apps and try phone mic first.");
             stop();
@@ -288,35 +317,56 @@ public final class NativeAudioEngine {
         return (float) Math.tanh(combined * 1.3);
     }
     private void processStream() {
-        short[] pcmIn = new short[512], pcmOut = new short[512];
-        ByteBuffer chunk = ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN);
+        short[] pcmIn = new short[1024], pcmOut = new short[1024];
+        ByteBuffer chunk = ByteBuffer.allocate(2048).order(ByteOrder.LITTLE_ENDIAN);
         int tick = 0;
         try {
             while (running.get()) {
                 int count = input.read(pcmIn, 0, pcmIn.length, AudioRecord.READ_BLOCKING);
                 if (count <= 0) { if (count < 0) emit("error", "Android AudioRecord read error: " + count); break; }
-                chunk.clear(); double peak = 0;
-                for (int i = 0; i < count; i++) {
-                    float original = pcmIn[i] / 32768f;
-                    float out = process(original);
-                    peak = Math.max(peak, Math.abs(original));
-                    short value = (short)(clamp(out, -1, 1) * 32767);
-                    pcmOut[i] = (short)(clamp(out * master, -1, 1) * 32767);
-                    boolean raw;
-                    synchronized (recordLock) { raw = recordRaw; }
-                    chunk.putShort(raw ? pcmIn[i] : value);
-                }
-                if (monitor) output.write(pcmOut, 0, count, AudioTrack.WRITE_BLOCKING);
-                synchronized (recordLock) {
-                    if (wavOut != null) {
-                        try { wavOut.write(chunk.array(), 0, count * 2); pcmBytes += count * 2; }
-                        catch (Exception e) { emit("error", "Recording write failed: " + e.getMessage()); finishWav(); }
+                chunk.clear();
+                double vocalPeak = 0, instPeak = 0;
+                int valid = mehfil ? count - count % 2 : count;
+                if (mehfil) {
+                    // Input channel 1 (LEFT) = vocal mic; input channel 2 (RIGHT) = dry instruments.
+                    // Never process channel 2 through delay, pitch, feedback or noise gate.
+                    for (int i = 0; i < valid; i += 2) {
+                        float vocal = pcmIn[i] / 32768f;
+                        float instrument = pcmIn[i + 1] / 32768f;
+                        float affectedVocal = process(vocal) * (float)vocalVolume;
+                        float dryInstrument = instrument * (float)instrumentVolume;
+                        float combined = (float)Math.tanh((affectedVocal + dryInstrument) * .85);
+                        short wave = (short)(clamp(combined, -1, 1) * 32767);
+                        short speakers = (short)(clamp(combined * master, -1, 1) * 32767);
+                        pcmOut[i] = speakers; pcmOut[i + 1] = speakers;
+                        chunk.putShort(wave); chunk.putShort(wave);
+                        vocalPeak = Math.max(vocalPeak, Math.abs(vocal));
+                        instPeak = Math.max(instPeak, Math.abs(instrument));
+                    }
+                } else {
+                    for (int i = 0; i < valid; i++) {
+                        float original = pcmIn[i] / 32768f;
+                        float affected = process(original);
+                        short processed = (short)(clamp(affected, -1, 1) * 32767);
+                        pcmOut[i] = (short)(clamp(affected * master, -1, 1) * 32767);
+                        chunk.putShort(recordRaw ? pcmIn[i] : processed);
+                        vocalPeak = Math.max(vocalPeak, Math.abs(original));
                     }
                 }
-                tick += count;
-                if (tick > sampleRate / 8) {
+                if (monitor) output.write(pcmOut, 0, valid, AudioTrack.WRITE_BLOCKING);
+                synchronized (recordLock) {
+                    if (wavOut != null) {
+                        try { wavOut.write(chunk.array(), 0, valid * 2); pcmBytes += valid * 2; }
+                        catch (Exception ex) { emit("error", "Recording write failed: " + ex.getMessage()); finishWav(); }
+                    }
+                }
+                tick += valid;
+                if (tick > sampleRate / 8 * (mehfil ? 2 : 1)) {
                     tick = 0;
-                    emit("meter", String.valueOf((int) Math.max(-80, 20 * Math.log10(Math.max(peak, .00001)))));
+                    int dbV = (int)Math.max(-80, 20 * Math.log10(Math.max(vocalPeak, .00001)));
+                    int dbI = (int)Math.max(-80, 20 * Math.log10(Math.max(instPeak, .00001)));
+                    emit("meter", String.valueOf(dbV));
+                    if (mehfil) emit("mixmeters", dbV + "," + dbI);
                 }
             }
         } catch (Exception ex) { emit("error", "Native mic interrupted: " + ex.getMessage()); }
@@ -358,9 +408,10 @@ public final class NativeAudioEngine {
                 fileDescriptor = context.getContentResolver().openFileDescriptor(recordingUri, "rw");
                 if (fileDescriptor == null) throw new IllegalStateException("MediaStore refused file access.");
                 wavOut = new FileOutputStream(fileDescriptor.getFileDescriptor());
+                wavChannels = mehfil ? 2 : 1;
                 wavOut.write(new byte[44]); // Placeholder WAVE header; finalized on STOP.
                 pcmBytes = 0; recordRaw = raw;
-                emit("record", "RECORDING " + (raw ? "RAW MIC" : "EFFECTED AUDIO"));
+                emit("record", "RECORDING " + (mehfil ? "COMBINED MIC FX + DRY INSTRUMENTS (STEREO WAV)" : raw ? "RAW MIC" : "EFFECTED AUDIO"));
             } catch (Exception ex) { emit("error", "Recording cannot start: " + ex.getMessage()); finishWav(); }
         }
     }
@@ -373,9 +424,9 @@ public final class NativeAudioEngine {
             ByteBuffer h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
             h.put(new byte[]{'R','I','F','F'}); word(h, 36L + total);
             h.put(new byte[]{'W','A','V','E','f','m','t',' '}); word(h,16);
-            h.putShort((short)1); h.putShort((short)1); // PCM mono
-            word(h,sampleRate); word(h,sampleRate * 2L);
-            h.putShort((short)2); h.putShort((short)16);
+            h.putShort((short)1); h.putShort((short)wavChannels); // PCM mono or combined dual-mono stereo
+            word(h,sampleRate); word(h,sampleRate * 2L * wavChannels);
+            h.putShort((short)(2 * wavChannels)); h.putShort((short)16);
             h.put(new byte[]{'d','a','t','a'}); word(h,total);
             wavOut.getChannel().position(0);
             wavOut.write(h.array()); wavOut.flush(); wavOut.close(); wavOut = null;
