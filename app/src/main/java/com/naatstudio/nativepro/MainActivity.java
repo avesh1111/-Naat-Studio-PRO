@@ -112,6 +112,7 @@ public class MainActivity extends Activity {
             requestedBluetooth = true;
             runOnUiThread(MainActivity.this::startRequested);
         }
+        @JavascriptInterface public void hall(boolean enabled) { engine.setHallEnabled(enabled); }
         @JavascriptInterface public void noiseReduction(int strength) { engine.setNoiseReduction(strength); }
         @JavascriptInterface public void fastLive(boolean enabled) { engine.setFastLiveMode(enabled); }
         @JavascriptInterface public String outputs() { return engine.audioOutputs().toString(); }
