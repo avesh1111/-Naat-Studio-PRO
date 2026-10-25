@@ -21,6 +21,7 @@ public class MainActivity extends Activity {
     private boolean requestedMonitor = false;
     private boolean requestedMehfil = false;
     private String requestedDevice = "default";
+    private String requestedOutput = "default";
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -54,13 +55,13 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MIC);
             return;
         }
-        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED && !"default".equals(requestedDevice)) {
+        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED && (!"default".equals(requestedDevice) || !"default".equals(requestedOutput))) {
             // Requesting Bluetooth permission is not necessary for phone-mic recording.
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, 404);
             postEvent("hint", "Grant Nearby devices permission, then tap START again for earbuds mic.");
             return;
         }
-        engine.start(requestedDevice, requestedMonitor, requestedMehfil);
+        engine.start(requestedDevice, requestedMonitor, requestedMehfil, requestedOutput);
     }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -80,14 +81,24 @@ public class MainActivity extends Activity {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
             requestedMehfil = false;
+            requestedOutput = "default";
             runOnUiThread(MainActivity.this::startRequested);
         }
         @JavascriptInterface public void startMehfil(String deviceId, boolean monitor) {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
             requestedMehfil = true;
+            requestedOutput = "default";
             runOnUiThread(MainActivity.this::startRequested);
         }
+        @JavascriptInterface public void startBluetoothLive(String phoneMicId, String outputId) {
+            requestedDevice = phoneMicId == null ? "default" : phoneMicId;
+            requestedOutput = outputId == null ? "default" : outputId;
+            requestedMonitor = true;
+            requestedMehfil = false;
+            runOnUiThread(MainActivity.this::startRequested);
+        }
+        @JavascriptInterface public String outputs() { return engine.audioOutputs().toString(); }
         @JavascriptInterface public void mix(double vocal, double instrument) { engine.setMixLevels(vocal, instrument); }
         @JavascriptInterface public void stop() { engine.stop(); }
         @JavascriptInterface public void params(double level, double feedback, int ms, String mode, int gateDb, double master, boolean bypass) {
