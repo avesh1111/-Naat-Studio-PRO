@@ -23,24 +23,35 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - run: gradle --no-daemon :app:assembleDebug
+      - name: Build APK and capture compiler errors
+        id: compile
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug >/tmp/naat-gradle.log 2>&1
+          code=$?
+          tail -100 /tmp/naat-gradle.log
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          printf 'COMPILE_EXIT_CODE=%s\n' "$code" >/tmp/naat-build-result.txt
+          tail -120 /tmp/naat-gradle.log >>/tmp/naat-build-result.txt
+          exit 0
       - uses: actions/upload-artifact@v4
+        if: steps.compile.outputs.code == '0'
         with:
           name: NaatStudioPRO-native-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
-      - name: Publish build run reference
-        if: success()
+      - name: Publish build result and run reference
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B build-report origin/main
-            printf '{"run_id":%s,"commit":"%s","artifact":"NaatStudioPRO-native-debug-apk"}\n' "${{ github.run_id }}" "${{ github.sha }}" > BUILD-STATUS.json
-            git add BUILD-STATUS.json
-            git commit -m "chore: publish APK build reference [skip ci]" || exit 0
+            cp /tmp/naat-build-result.txt BUILD-RESULT.txt
+            printf '{"run_id":%s,"commit":"%s","success":%s,"artifact":"NaatStudioPRO-native-debug-apk"}\n' "${{ github.run_id }}" "${{ github.sha }}" "${{ steps.compile.outputs.code == '0' && 'true' || 'false' }}" > BUILD-STATUS.json
+            git add BUILD-STATUS.json BUILD-RESULT.txt
+            git commit -m "chore: publish native APK build report [skip ci]" || exit 0
             if git push origin HEAD:main; then exit 0; fi
             sleep 3
           done
