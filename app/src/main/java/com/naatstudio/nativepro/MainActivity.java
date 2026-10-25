@@ -18,6 +18,8 @@ public class MainActivity extends Activity {
     private WebView web;
     private NativeAudioEngine engine;
     private boolean pendingStart = false;
+    private boolean pendingBluetooth = false;
+    private boolean requestedBluetooth = false;
     private boolean requestedMonitor = false;
     private boolean requestedMehfil = false;
     private String requestedDevice = "default";
@@ -55,10 +57,11 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MIC);
             return;
         }
-        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED && (!"default".equals(requestedDevice) || !"default".equals(requestedOutput))) {
-            // Requesting Bluetooth permission is not necessary for phone-mic recording.
+        if (requestedBluetooth && Build.VERSION.SDK_INT >= 31 &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            pendingBluetooth = true;
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, 404);
-            postEvent("hint", "Grant Nearby devices permission, then tap START again for earbuds mic.");
+            postEvent("hint", "Allow Nearby devices for Bluetooth speaker/earbuds.");
             return;
         }
         engine.start(requestedDevice, requestedMonitor, requestedMehfil, requestedOutput);
@@ -69,6 +72,10 @@ public class MainActivity extends Activity {
             pendingStart = false;
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startRequested();
             else postEvent("error", "Microphone permission denied. Enable it in Android App Settings.");
+        } else if (code == 404 && pendingBluetooth) {
+            pendingBluetooth = false;
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startRequested();
+            else postEvent("error", "Nearby devices permission denied. Bluetooth output is unavailable.");
         }
     }
     @Override protected void onDestroy() {
@@ -82,13 +89,15 @@ public class MainActivity extends Activity {
             requestedMonitor = monitor;
             requestedMehfil = false;
             requestedOutput = "default";
+            requestedBluetooth = false;
             runOnUiThread(MainActivity.this::startRequested);
         }
-        @JavascriptInterface public void startMehfil(String deviceId, boolean monitor) {
+        @JavascriptInterface public void startMehfil(String deviceId, boolean monitor, String outputId, boolean stereo) {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
-            requestedMehfil = true;
-            requestedOutput = "default";
+            requestedMehfil = stereo;
+            requestedOutput = (outputId == null || outputId.isEmpty()) ? "default" : outputId;
+            requestedBluetooth = false;
             runOnUiThread(MainActivity.this::startRequested);
         }
         @JavascriptInterface public void startBluetoothLive(String phoneMicId, String outputId) {
@@ -96,6 +105,7 @@ public class MainActivity extends Activity {
             requestedOutput = outputId == null ? "default" : outputId;
             requestedMonitor = true;
             requestedMehfil = false;
+            requestedBluetooth = true;
             runOnUiThread(MainActivity.this::startRequested);
         }
         @JavascriptInterface public void noiseReduction(int strength) { engine.setNoiseReduction(strength); }
