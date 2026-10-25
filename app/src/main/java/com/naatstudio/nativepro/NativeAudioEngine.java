@@ -40,6 +40,8 @@ public final class NativeAudioEngine {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private AudioRecord input;
     private AudioTrack output;
+    private AudioDeviceInfo requestedPlaybackDevice;
+    private volatile boolean bluetoothPlayback = false;
     private AutomaticGainControl agc;
     private AcousticEchoCanceler aec;
     private NoiseSuppressor ns;
@@ -132,6 +134,32 @@ public final class NativeAudioEngine {
         } catch (Exception e) { emit("hint", "Some input devices require Nearby devices permission."); }
         return found;
     }
+    private boolean isBluetoothPlaybackType(int t) {
+        return t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            (Build.VERSION.SDK_INT >= 31 &&
+                (t == AudioDeviceInfo.TYPE_BLE_HEADSET || t == AudioDeviceInfo.TYPE_BLE_SPEAKER));
+    }
+    @SuppressLint("MissingPermission")
+    JSONArray audioOutputs() {
+        JSONArray found = new JSONArray();
+        try {
+            JSONObject def = new JSONObject();
+            def.put("id", "default"); def.put("name", "Android default audio output");
+            def.put("kind", "default"); found.put(def);
+            for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                JSONObject o = new JSONObject();
+                o.put("id", String.valueOf(d.getId()));
+                o.put("name", d.getProductName().toString() +
+                    (isBluetoothPlaybackType(d.getType()) ? " (Bluetooth media output)" : " (wired / speaker)"));
+                o.put("kind", isBluetoothPlaybackType(d.getType()) ? "bt" :
+                    (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ? "phone" : "other"));
+                found.put(o);
+            }
+        } catch (Exception ex) {
+            emit("hint", "Bluetooth output list unavailable. Allow Nearby devices permission, then refresh.");
+        }
+        return found;
+    }
     private String deviceKind(int type) {
         if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return "Bluetooth call mic";
         if (Build.VERSION.SDK_INT >= 31 && type == AudioDeviceInfo.TYPE_BLE_HEADSET) return "Bluetooth LE mic";
@@ -141,11 +169,38 @@ public final class NativeAudioEngine {
     }
     @SuppressLint("MissingPermission")
     synchronized void start(String requestedDevice, boolean doMonitor) {
-        start(requestedDevice, doMonitor, false);
+        start(requestedDevice, doMonitor, false, "default");
     }
     synchronized void start(String requestedDevice, boolean doMonitor, boolean mehfilMode) {
+        start(requestedDevice, doMonitor, mehfilMode, "default");
+    }
+    synchronized void start(String requestedDevice, boolean doMonitor, boolean mehfilMode, String requestedOutput) {
         stop();
         mehfil = mehfilMode;
+        requestedPlaybackDevice = null;
+        bluetoothPlayback = false;
+        if (requestedOutput != null && !requestedOutput.equals("default")) {
+            try {
+                for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                    if (String.valueOf(d.getId()).equals(requestedOutput)) {
+                        requestedPlaybackDevice = d;
+                        bluetoothPlayback = isBluetoothPlaybackType(d.getType());
+                        break;
+                    }
+                }
+            } catch (Exception ex) {
+                emit("error", "Bluetooth output list not accessible. Allow Nearby devices permission.");
+                return;
+            }
+            if (requestedPlaybackDevice == null) {
+                emit("error", "Selected Bluetooth output disconnected. Reconnect and refresh output list.");
+                return;
+            }
+        }
+        if (bluetoothPlayback && !doMonitor) {
+            emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
+            return;
+        }
         if (mehfilMode && (requestedDevice == null || "default".equals(requestedDevice))) {
             emit("error", "Live Mehfil requires a 2-channel USB audio interface. Select USB input."); return;
         }
@@ -190,6 +245,13 @@ public final class NativeAudioEngine {
             if (candidate == null) throw new IllegalStateException("Android could not initialize an input recording session.");
             input = candidate;
             sampleRate = workingRate;
+            // Keep the physical PHONE microphone as capture source while Bluetooth plays music.
+            // Do not switch to communication/HFP mode for Bluetooth media output.
+            if (bluetoothPlayback) {
+                audioManager.setMode(AudioManager.MODE_NORMAL);
+                if (chosen == null || chosen.getType() != AudioDeviceInfo.TYPE_BUILTIN_MIC)
+                    throw new IllegalStateException("Bluetooth Live needs the phone's built-in microphone. Select Phone mic.");
+            }
             // Best effort: disable built-in AGC / echo cancellation / noise suppression.
             int sessionId = input.getAudioSessionId();
             try { if (AutomaticGainControl.isAvailable()) { agc = AutomaticGainControl.create(sessionId); if (agc != null) agc.setEnabled(false); } } catch (Exception ignored) {}
@@ -210,6 +272,8 @@ public final class NativeAudioEngine {
                     .setSampleRate(sampleRate).setChannelMask(mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO).build())
                 .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(trackMin * 2, 8192)).build();
             if (output.getState() != AudioTrack.STATE_INITIALIZED) throw new IllegalStateException("Cannot open audio output.");
+            if (requestedPlaybackDevice != null && !output.setPreferredDevice(requestedPlaybackDevice))
+                throw new IllegalStateException("Android rejected selected output. Reconnect Bluetooth media audio.");
             initDSP();
             monitor = doMonitor;
             input.startRecording();
@@ -224,7 +288,10 @@ public final class NativeAudioEngine {
             worker = new Thread(this::processStream, "NaatStudioAudioEngine");
             worker.setPriority(Thread.MAX_PRIORITY);
             worker.start();
-            emit("status", "MIC CONNECTED • " + (mehfilMode ? "MEHFIL 2-CHANNEL USB" : "Native AudioRecord") + " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth requested" : ""));
+            emit("status", "MIC CONNECTED • " +
+                (mehfilMode ? "MEHFIL 2-CHANNEL USB" : bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
+                " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth microphone requested" : ""));
+            if (bluetoothPlayback) emit("hint", "Bluetooth media output requested. Sound may be delayed; keep speaker away from the phone mic.");
         } catch (Exception e) {
             emit("error", "Mic could not start: " + e.getMessage() + ". Close other mic apps and try phone mic first.");
             stop();
@@ -320,6 +387,7 @@ public final class NativeAudioEngine {
         short[] pcmIn = new short[1024], pcmOut = new short[1024];
         ByteBuffer chunk = ByteBuffer.allocate(2048).order(ByteOrder.LITTLE_ENDIAN);
         int tick = 0;
+        int outputRouteCheck = 0;
         try {
             while (running.get()) {
                 int count = input.read(pcmIn, 0, pcmIn.length, AudioRecord.READ_BLOCKING);
@@ -353,7 +421,22 @@ public final class NativeAudioEngine {
                         vocalPeak = Math.max(vocalPeak, Math.abs(original));
                     }
                 }
-                if (monitor) output.write(pcmOut, 0, valid, AudioTrack.WRITE_BLOCKING);
+                if (monitor) {
+                    output.write(pcmOut, 0, valid, AudioTrack.WRITE_BLOCKING);
+                    if (bluetoothPlayback && ++outputRouteCheck == 12) {
+                        AudioDeviceInfo active = output.getRoutedDevice();
+                        if (active != null && !isBluetoothPlaybackType(active.getType())) {
+                            monitor = false;
+                            try { output.pause(); } catch (Exception ignored) {}
+                            emit("error", "Sound was routed to " + active.getProductName() +
+                                " instead of Bluetooth. Playback stopped to avoid speaker feedback. Reconnect Bluetooth media output.");
+                        } else if (active != null) {
+                            emit("route", "BLUETOOTH OUTPUT ACTIVE • " + active.getProductName());
+                        } else {
+                            emit("hint", "Bluetooth output route not yet confirmed; verify playback on earbuds/speaker at low volume.");
+                        }
+                    }
+                }
                 synchronized (recordLock) {
                     if (wavOut != null) {
                         try { wavOut.write(chunk.array(), 0, valid * 2); pcmBytes += valid * 2; }
@@ -384,6 +467,8 @@ public final class NativeAudioEngine {
         if (aec != null) { aec.release(); aec = null; }
         if (ns != null) { ns.release(); ns = null; }
         if (output != null) { try { output.pause(); output.flush(); } catch (Exception ignored) {} output.release(); output = null; }
+        requestedPlaybackDevice = null;
+        bluetoothPlayback = false;
         if (audioManager != null && Build.VERSION.SDK_INT >= 31) {
             try { audioManager.clearCommunicationDevice(); audioManager.setMode(AudioManager.MODE_NORMAL); } catch (Exception ignored) {}
         }
