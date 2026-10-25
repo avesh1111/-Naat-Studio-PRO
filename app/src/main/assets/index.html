@@ -11,7 +11,7 @@
 <p class="catlead">Choose separate audio routing for stage, Bluetooth earbuds, or your phone microphone. Each category keeps your DD-8 presets.</p>
 <div class="catgrid">
 <button class="catcard" onclick="openCategory('mehfil')"><span class="catemoji">🎤</span><span><strong>01 — LIVE MEHFIL</strong><small>Vocal mic DD-8 effects • Instruments dry • Separate faders • Combined WAV • USB mixer + PA speaker</small></span></button>
-<button class="catcard" onclick="openCategory('earbuds')"><span class="catemoji">🎧</span><span><strong>02 — EARBUDS STUDIO</strong><small>Bluetooth headset mic • Native recording • Delay may occur while monitoring</small></span></button>
+<button class="catcard" onclick="openCategory('earbuds')"><span class="catemoji">🎧</span><span><strong>02 — EARBUDS STUDIO</strong><small>Phone mic → DD-8 studio effects → Bluetooth earbuds/speaker live</small></span></button>
 <button class="catcard" onclick="openCategory('mobile')"><span class="catemoji">📱</span><span><strong>03 — MOBILE MIC STUDIO</strong><small>Phone microphone • DD-8 effects • WAV recording without external interface</small></span></button>
 </div></section>
 <div id="studioPage" style="display:none">
@@ -21,6 +21,13 @@
 <div class="mixrow"><label>🎤 CH 1 — VOCAL MIC / DD-8 ON</label><span id="micMixVal" class="right">65%</span><input id="micMix" type="range" min="0" max="100" value="65"/><div class="mixbar"><b id="micMixMeter"></b></div></div>
 <div class="mixrow"><label>🎹 CH 2 — INSTRUMENTS / FX OFF</label><span id="instMixVal" class="right">55%</span><input id="instMix" type="range" min="0" max="100" value="55"/><div class="mixbar gold"><b id="instMixMeter"></b></div></div>
 <div class="notice">⚠ Never feed PA speaker output into the interface. Use LINE-level signal. Enable MONITOR only after a low-volume soundcheck; turn interface direct monitoring OFF to avoid doubled vocals. Separate faders require 2-channel USB capture supported by your phone.</div></section>
+<section class="panel" id="bluetoothLive" style="display:none"><h2>🎧 PHONE MIC → BLUETOOTH LIVE</h2>
+<p class="help">Sing into your PHONE microphone, hear the processed DD-8 Naat voice in paired Bluetooth earbuds or Bluetooth speaker. Use Android Bluetooth settings to connect first. Output may have noticeable delay and acoustic feedback; use low volume.</p>
+<label>BLUETOOTH MEDIA OUTPUT</label><select id="btOutput"><option value="">Pair speaker/earbuds first</option></select>
+<div class="twocol"><button class="btn ghost" onclick="grantBluetooth()">ALLOW NEARBY DEVICES</button><button class="btn ghost" onclick="refreshOutputs()">↻ REFRESH OUTPUTS</button></div>
+<div style="height:10px"></div><button class="btn" onclick="startBluetoothLive()" style="width:100%">▶ START LIVE PHONE MIC → BLUETOOTH</button>
+<div class="status" id="btRouteStatus">READY • Connect Bluetooth media speaker or earbuds first.</div>
+</section>
 <section class="panel"><h2>01 / FIVE NAAT CHANNELS</h2><div id="presetBar" class="grid5"></div><p class="hint">Tap channel to load • Hold channel 2 seconds to SAVE • Tap name to rename</p><div class="row"><span class="chip" id="selectedName">CH1 — Har Waqt Tasavvur</span><span class="chip" id="savedNotice">AUTOSAVED PRESETS</span></div></section>
 <section class="panel"><h2>02 / DIGITAL DELAY PEDAL</h2><div class="pedal"><div class="pedalHead"><div class="knobs"><div class="knob"><h3>E.LEVEL</h3><div class="knobring"></div><div class="knobvalue" id="levelValue">60%</div><input type="range" id="level" min="0" max="100" value="60"/></div><div class="knob"><h3>FEEDBACK</h3><div class="knobring"></div><div class="knobvalue" id="fbValue">25%</div><input type="range" id="fb" min="0" max="94" value="25"/></div><div class="knob"><h3>TIME</h3><div class="knobring"></div><div class="knobvalue" id="timeValue">380 ms</div><input type="range" id="time" min="20" max="2000" step="10" value="380"/></div></div><div class="mode"><label>MODE — 11 LIVE AUDIO EFFECTS</label><select id="mode"><option>LOOP</option><option>ANALOG</option><option>STANDARD</option><option>TAPE</option><option>WARM</option><option>REVERSE</option><option>+RV</option><option>SHIM</option><option>MOD</option><option>WARP</option><option>GLT</option></select></div></div><div class="pedalBase"><strong>DD-8</strong><small>DIGITAL DELAY</small><div class="pedalFoot"><span class="led on" id="led"></span><button class="footswitch" id="bypassBtn" title="Toggle BYPASS"></button><span class="chip" id="bypassStatus">FX ON</span></div><small style="display:block;margin-top:14px">FOOTSWITCH — BYPASS</small></div></div></section>
 <section class="panel"><h2>03 / NATIVE MICROPHONE & OUTPUT</h2><p class="help">Native Android AudioRecord captures your phone, USB, or supported Bluetooth microphone. Android—not the HTML browser—opens the mic.</p><label>SELECT INPUT MICROPHONE</label><select id="device"><option value="default">Android default microphone</option></select><div class="twocol"><button class="btn ghost" onclick="refreshDevices()">↻ REFRESH MIC LIST</button><button class="btn ghost" onclick="startMic()">🎙 START NATIVE MIC</button><button class="btn ghost" onclick="grantBluetooth()">BLUETOOTH PERMISSION</button><button class="btn ghost" onclick="stopMic()">STOP MIC</button></div><div style="height:11px"></div><div class="toggle"><input id="monitor" type="checkbox"/><span>LIVE monitoring into speaker/earbuds (OFF recommended for recording; Bluetooth can delay)</span></div><div class="line"></div><label>INPUT METER</label><div class="bar"><b id="meter"></b></div><div class="row" style="justify-content:space-between;margin-top:8px"><span class="tiny" id="meterNum">-∞ dBFS</span><span class="tiny" id="nativeStatus">MIC OFF</span></div><div style="height:14px"></div><label>NOISE GATE <span id="gateValue">−50 dB</span></label><input type="range" id="gate" min="-80" max="-20" value="-50"/><label>MASTER VOLUME <span id="masterValue">15%</span></label><input type="range" id="master" min="0" max="100" value="15"/><div class="status" id="status">READY • Select mic, then START NATIVE MIC.</div></section>
@@ -44,12 +51,13 @@ function openCategory(category){
  if(isRunning)stopMic(); currentCategory=category;
  id('categoryHome').style.display='none';id('studioPage').style.display='block';document.querySelector('.footer').hidden=false;
  const m=category==='mehfil', b=category==='earbuds';
+ id('bluetoothLive').style.display=b?'block':'none';
  id('mehfilMixer').style.display=m?'block':'none';id('rawOption').style.display=m?'none':'flex';
  id('categoryBadge').textContent=m?'LIVE MEHFIL':b?'EARBUDS STUDIO':'MOBILE MIC STUDIO';
- id('categoryHelp').textContent=m?'USB INPUT 1: VOCAL + DD-8 • USB INPUT 2: CLEAN INSTRUMENTS • COMBINED RECORDING':b?'Select an Android Bluetooth headset microphone. Bluetooth routing and delay depend on your device.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
+ id('categoryHelp').textContent=m?'USB INPUT 1: VOCAL + DD-8 • USB INPUT 2: CLEAN INSTRUMENTS • COMBINED RECORDING':b?'Speak into PHONE MIC and hear DD-8 effects LIVE on Bluetooth speaker / earbuds. Set media audio output. Bluetooth latency is unavoidable.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
  id('recTitle').textContent=m?'04 / LIVE MEHFIL — COMBINED WAV RECORDER':b?'04 / EARBUDS NAAT WAV RECORDER':'04 / MOBILE NAAT WAV RECORDER';
  id('recordStatus').textContent=m?'READY • Two-channel USB input is required for combined recording.':'READY TO RECORD';
- id('monitor').checked=m;setMix();refreshDevices();window.scrollTo(0,0);
+ id('monitor').checked=m||b;setMix();refreshDevices();if(b)refreshOutputs();window.scrollTo(0,0);
 }
 function showHome(){if(isRunning){if(!confirm('Stop current microphone and save any active recording before switching?'))return;stopMic();}
  currentCategory=null;id('studioPage').style.display='none';id('categoryHome').style.display='block';document.querySelector('.footer').hidden=true;window.scrollTo(0,0);
@@ -76,12 +84,36 @@ function refreshDevices(){
  let selected=id('device').value;
  try{
   const found=JSON.parse(native.microphones());
-  let usable=found.filter(d=>currentCategory==='mehfil'?d.kind==='usb':currentCategory==='earbuds'?d.kind==='bt':currentCategory==='mobile'?d.kind==='phone'||d.id==='default':true);
+  let usable=found.filter(d=>currentCategory==='mehfil'?d.kind==='usb':currentCategory==='earbuds'?d.kind==='phone':currentCategory==='mobile'?d.kind==='phone'||d.id==='default':true);
   const sel=id('device');sel.innerHTML='';
   usable.forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=d.name+(currentCategory==='mehfil'?' • Channels '+(d.channelCounts||'unknown'):'');sel.appendChild(o);});
-  if(usable.length===0){const o=document.createElement('option');o.value='';o.textContent=currentCategory==='mehfil'?'Connect a 2-channel USB audio interface using OTG':currentCategory==='earbuds'?'No Bluetooth mic detected — pair earbuds and allow permission':'No phone microphone found';sel.appendChild(o);showStatus(o.textContent,true);}
-  else{if([...sel.options].some(o=>o.value===selected))sel.value=selected;else if(currentCategory==='mobile'&&[...sel.options].some(o=>o.value==='default'))sel.value='default';showStatus('Audio input list refreshed. Check correct physical routing before starting.');}
+  if(usable.length===0){const o=document.createElement('option');o.value='';o.textContent=currentCategory==='mehfil'?'Connect a 2-channel USB audio interface using OTG':currentCategory==='earbuds'?'No built-in mobile microphone detected':'No phone microphone found';sel.appendChild(o);showStatus(o.textContent,true);}
+  else{if([...sel.options].some(o=>o.value===selected))sel.value=selected;else if((currentCategory==='mobile'||currentCategory==='earbuds')&&[...sel.options].some(o=>o.value==='default'))sel.value='default';showStatus('Audio input list refreshed. Check correct physical routing before starting.');}
  }catch(e){showStatus('Failed to list microphones: '+e.message,true);}
+}
+function refreshOutputs(){
+ if(!native||!native.outputs)return;
+ try {
+  const found=JSON.parse(native.outputs());
+  const devices=found.filter(d=>d.kind==='bt');
+  const sel=id('btOutput');let current=sel.value;sel.innerHTML='';
+  if(!devices.length){const o=document.createElement('option');o.value='';o.textContent='No Bluetooth MEDIA output detected';sel.appendChild(o);id('btRouteStatus').textContent='Pair Bluetooth speaker or earbuds, enable MEDIA AUDIO, grant Nearby devices permission, refresh.';return;}
+  for(const d of devices){const o=document.createElement('option');o.value=d.id;o.textContent=d.name;sel.appendChild(o);}
+  if([...sel.options].some(o=>o.value===current))sel.value=current;
+  id('btRouteStatus').textContent='Select output, keep phone mic near your voice, set volume low and START LIVE.';
+ }catch(e){id('btRouteStatus').textContent='Bluetooth output unavailable: '+e.message;}
+}
+function startBluetoothLive(){
+ if(!native||!native.startBluetoothLive)return;
+ const selected=id('btOutput').value;
+ if(!selected){id('btRouteStatus').textContent='Connect Bluetooth MEDIA device, allow Nearby devices and press REFRESH OUTPUTS.';return;}
+ const devices=JSON.parse(native.microphones());
+ const builtIn=devices.find(d=>d.kind==='phone');
+ if(!builtIn){id('btRouteStatus').textContent='Built-in phone mic not detected. Enable Microphone permission.';return;}
+ id('device').value=[...id('device').options].some(o=>o.value===builtIn.id)?builtIn.id:id('device').value;
+ id('monitor').checked=true;
+ id('btRouteStatus').textContent='Starting mobile mic and Bluetooth media output…';
+ native.startBluetoothLive(builtIn.id,selected);
 }
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
 function startMic(){if(!native){showStatus('This must run inside the Android APK.',true);return;}showStatus('Requesting Android native microphone…');if(!id('device').value){showStatus('Connect a compatible microphone first and press REFRESH MIC LIST.',true);return;}
@@ -97,7 +129,8 @@ function tapTempo(){let now=Date.now();if(now-lastTap>2800)taps=[];if(lastTap)ta
 window.nativeEvent=(type,txt)=>{
  if(type==='status'){
    isRunning=txt.startsWith('MIC CONNECTED');id('nativeStatus').textContent=txt;id('liveBtn').textContent=isRunning?'STOP MIC':'START MIC';id('footStatus').textContent=isRunning?'MICROPHONE CONNECTED':'MICROPHONE OFF';showStatus(txt);
- } else if(type==='error'){showStatus(txt,true);id('recordStatus').textContent=txt;
+ } else if(type==='route'){id('btRouteStatus').textContent=txt;showStatus(txt);
+ } else if(type==='error'){if(currentCategory==='earbuds')id('btRouteStatus').textContent=txt;showStatus(txt,true);id('recordStatus').textContent=txt;
  } else if(type==='hint'){showStatus(txt);
  } else if(type==='meter'){const d=Math.max(-80,Math.min(0,+txt));id('meterNum').textContent=d+' dBFS';id('meter').style.width=Math.max(0,(d+80)/80*100)+'%';
  } else if(type==='mixmeters'){
