@@ -65,6 +65,7 @@ public final class NativeAudioEngine {
     private int wavChannels = 1;
     private volatile int delayMs = 380, gateDb = -50;
     private volatile boolean bypass = false;
+    private volatile boolean hallEnabled = false;
     private volatile String mode = "WARM";
     private volatile int loopState = 0; // 0 idle, 1 capture, 2 play, 3 overdub
     private float[] loop = new float[0];
@@ -102,6 +103,7 @@ public final class NativeAudioEngine {
         vocalVolume = clamp(mic, 0, 1); instrumentVolume = clamp(inst, 0, 1);
     }
     void setWarp(boolean b) { warp = b; }
+    void setHallEnabled(boolean enabled) { hallEnabled = enabled; }
     void setFastLiveMode(boolean enabled) { fastLiveMode = enabled; }
 
     synchronized void setNoiseReduction(int strength) {
@@ -516,6 +518,19 @@ public final class NativeAudioEngine {
         double wetGain = warp && "WARP".equals(m) ? 1.0 : .65;
         // Master soft limiter. The recording still receives processed audio when speaker monitoring is off.
         double combined = bypass ? clean : (clean * .78 + processed * wetGain);
+        // Optional Hall is independent of the DD-8 delay selection. It processes vocal
+        // only (channel 2 instruments bypass this method), and never touches dry routing.
+        // +RV already has its own hall algorithm, so don't apply it twice.
+        if (hallEnabled && !bypass && !"+RV".equals(m)) {
+            float a = hallA[hallPosA], b = hallB[hallPosB], c = hallC[hallPosC];
+            hallA[hallPosA] = .55f * a + (float)combined * .16f;
+            hallB[hallPosB] = .56f * b + (float)combined * .14f;
+            hallC[hallPosC] = .58f * c + (float)combined * .12f;
+            hallPosA = (hallPosA + 1) % hallA.length;
+            hallPosB = (hallPosB + 1) % hallB.length;
+            hallPosC = (hallPosC + 1) % hallC.length;
+            combined = combined * .82 + (a + b + c) * .18;
+        }
         return (float) Math.tanh(combined * 1.3);
     }
     private void processStream() {
