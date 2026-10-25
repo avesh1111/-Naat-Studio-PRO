@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private boolean requestedBluetooth = false;
     private boolean requestedMonitor = false;
     private boolean requestedMehfil = false;
+    private boolean requestedStageMono = false;
     private String requestedDevice = "default";
     private String requestedOutput = "default";
 
@@ -64,7 +65,7 @@ public class MainActivity extends Activity {
             postEvent("hint", "Allow Nearby devices for Bluetooth speaker/earbuds.");
             return;
         }
-        engine.start(requestedDevice, requestedMonitor, requestedMehfil, requestedOutput);
+        engine.start(requestedDevice, requestedMonitor, requestedMehfil, requestedOutput, requestedStageMono);
     }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -88,6 +89,7 @@ public class MainActivity extends Activity {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
             requestedMehfil = false;
+            requestedStageMono = false;
             requestedOutput = "default";
             requestedBluetooth = false;
             runOnUiThread(MainActivity.this::startRequested);
@@ -96,6 +98,7 @@ public class MainActivity extends Activity {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
             requestedMehfil = stereo;
+            requestedStageMono = !stereo;
             requestedOutput = (outputId == null || outputId.isEmpty()) ? "default" : outputId;
             requestedBluetooth = false;
             runOnUiThread(MainActivity.this::startRequested);
@@ -105,6 +108,7 @@ public class MainActivity extends Activity {
             requestedOutput = outputId == null ? "default" : outputId;
             requestedMonitor = true;
             requestedMehfil = false;
+            requestedStageMono = false;
             requestedBluetooth = true;
             runOnUiThread(MainActivity.this::startRequested);
         }
