@@ -55,6 +55,10 @@ public final class NativeAudioEngine {
     private volatile double level = .6, feedback = .25, master = .15;
     private volatile double vocalVolume = .65, instrumentVolume = .55;
     private volatile boolean mehfil = false;
+    private volatile int noiseStrength = 2; // 0 OFF, 1 LIGHT, 2 BALANCED, 3 STRONG
+    private float expanderGain = 1f;
+    private float noiseTone = 0f;
+    private boolean platformNoiseActive = false;
     private int wavChannels = 1;
     private volatile int delayMs = 380, gateDb = -50;
     private volatile boolean bypass = false;
@@ -96,6 +100,26 @@ public final class NativeAudioEngine {
     }
     void setWarp(boolean b) { warp = b; }
     void setFastLiveMode(boolean enabled) { fastLiveMode = enabled; }
+
+    synchronized void setNoiseReduction(int strength) {
+        noiseStrength = (int)clamp(strength, 0, 3);
+        boolean enablePlatform = noiseStrength > 0 && !mehfil;
+        try {
+            if (ns != null) {
+                ns.setEnabled(enablePlatform);
+                platformNoiseActive = ns.getEnabled();
+            } else {
+                platformNoiseActive = false;
+            }
+        } catch (Exception ex) { platformNoiseActive = false; }
+        String label = noiseStrength == 0 ? "OFF" : noiseStrength == 1 ? "LIGHT" :
+            noiseStrength == 2 ? "BALANCED" : "STRONG";
+        emit("noise", "Noise Reduction: " + label + " • " +
+            (!running.get() ? "restart mic to apply Android suppression" :
+                platformNoiseActive ? "Android NoiseSuppressor ON + vocal expander" :
+                "software vocal expander only (Android NS unavailable/disabled)") +
+            (mehfil ? " • instrument input unaffected" : ""));
+    }
 
     synchronized void loopCommand(String action) {
         if (!running.get()) { emit("hint", "Start native mic before using LOOP."); return; }
@@ -233,7 +257,9 @@ public final class NativeAudioEngine {
             AudioRecord candidate = null;
             int workingRate = 48000;
             for (int rate : new int[]{48000, 44100}) {
-                for (int src : new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION}) {
+                for (int src : noiseStrength > 0 && !mehfil
+                    ? new int[]{MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.UNPROCESSED}
+                    : new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION}) {
                     try {
                         int minimum = AudioRecord.getMinBufferSize(rate, mehfilMode ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
                         if (minimum <= 0) continue;
@@ -264,7 +290,24 @@ public final class NativeAudioEngine {
             int sessionId = input.getAudioSessionId();
             try { if (AutomaticGainControl.isAvailable()) { agc = AutomaticGainControl.create(sessionId); if (agc != null) agc.setEnabled(false); } } catch (Exception ignored) {}
             try { if (AcousticEchoCanceler.isAvailable()) { aec = AcousticEchoCanceler.create(sessionId); if (aec != null) aec.setEnabled(false); } } catch (Exception ignored) {}
-            try { if (NoiseSuppressor.isAvailable()) { ns = NoiseSuppressor.create(sessionId); if (ns != null) ns.setEnabled(false); } } catch (Exception ignored) {}
+            try {
+                platformNoiseActive = false;
+                // Native NS operates on the whole capture session. Keep it OFF for Live Mehfil
+                // so clean instrument channel 2 never receives the vocal noise processing.
+                if (!mehfil && NoiseSuppressor.isAvailable()) {
+                    ns = NoiseSuppressor.create(sessionId);
+                    if (ns != null) {
+                        ns.setEnabled(noiseStrength > 0);
+                        platformNoiseActive = ns.getEnabled();
+                    }
+                }
+            } catch (Exception ignored) { platformNoiseActive = false; }
+            emit("noise", "Vocal Noise Reduction " +
+                (noiseStrength == 0 ? "OFF" : noiseStrength == 1 ? "LIGHT" :
+                noiseStrength == 2 ? "BALANCED" : "STRONG") + " • " +
+                (platformNoiseActive ? "Android NS ACTIVE + voice expander" :
+                    "vocal-only expander; Android NS not active") +
+                (mehfil ? " • instruments remain clean" : ""));
             if (chosen != null) {
                 if (!input.setPreferredDevice(chosen)) {
                     if (mehfilMode) throw new IllegalStateException("Cannot route selected USB interface; verify OTG connection.");
@@ -346,7 +389,9 @@ public final class NativeAudioEngine {
         hallB = new float[(int)(sampleRate * .131)];
         hallC = new float[(int)(sampleRate * .191)];
         hallPosA = hallPosB = hallPosC = 0;
-        lowpass = inputPrev = highpass = envelope = 0; phase = 0; glitchClock = 0;
+        lowpass = inputPrev = highpass = envelope = noiseTone = 0;
+        expanderGain = 1f;
+        phase = 0; glitchClock = 0;
     }
     private float readDelay(double timeMs) {
         int offset = (int) clamp(timeMs * sampleRate / 1000, 1, delayLine.length - 2);
@@ -355,11 +400,35 @@ public final class NativeAudioEngine {
         return delayLine[idx];
     }
     private float process(float sample) {
-        // 75 Hz DC / handling rumble filter and -80..-20 dB adaptive gate.
-        highpass = (float) (sample - inputPrev + .9902 * highpass); inputPrev = sample;
-        envelope = envelope * .997f + Math.abs(highpass) * .003f;
-        float threshold = (float) Math.pow(10, gateDb / 20.0);
-        float clean = highpass * (envelope < threshold ? .03f : 1f);
+        // Vocal-only noise processing. Channel 2 instruments are never passed to process().
+        // First remove mic handling rumble (~75 Hz), then use a gentle, attack/release
+        // downward expander so consonants and sustained Naat notes aren't hard-chopped.
+        highpass = (float)(sample - inputPrev + .9902 * highpass);
+        inputPrev = sample;
+        float magnitude = Math.abs(highpass);
+        envelope += (magnitude > envelope ? .023f : .00045f) * (magnitude - envelope);
+        int strength = noiseStrength;
+        float threshold = (float)Math.pow(10, gateDb / 20.0);
+        if (strength == 1) threshold = Math.max(threshold, .0018f);   // -55 dB
+        if (strength == 2) threshold = Math.max(threshold, .0032f);   // -50 dB
+        if (strength == 3) threshold = Math.max(threshold, .0050f);   // -46 dB
+        float minGain = strength == 3 ? .06f : strength == 2 ? .12f : strength == 1 ? .26f : .03f;
+        float activity = (float)clamp((envelope / Math.max(threshold, 0.0001f) - .65) / 2.0, 0, 1);
+        float smoothActivity = activity * activity * (3 - 2 * activity);
+        float wantedGain = minGain + (1 - minGain) * smoothActivity;
+        expanderGain += (wantedGain > expanderGain ? .0035f : .00045f)
+            * (wantedGain - expanderGain);
+        // Upper-band hiss taming; conservative to preserve Naat vocal detail.
+        float vocal = highpass;
+        if (strength != 0) {
+            int cutoff = strength == 1 ? 13500 : strength == 2 ? 10500 : 7800;
+            float pole = (float)Math.exp(-2.0 * Math.PI * cutoff / sampleRate);
+            noiseTone = pole * noiseTone + (1 - pole) * highpass;
+            vocal = noiseTone;
+        } else {
+            noiseTone = highpass;
+        }
+        float clean = vocal * expanderGain;
         float send = clean * (float)level;
         String m = mode;
         float delayed = readDelay(delayMs);
