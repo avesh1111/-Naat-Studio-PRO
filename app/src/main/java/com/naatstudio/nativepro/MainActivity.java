@@ -98,6 +98,7 @@ public class MainActivity extends Activity {
             requestedMehfil = false;
             runOnUiThread(MainActivity.this::startRequested);
         }
+        @JavascriptInterface public void fastLive(boolean enabled) { engine.setFastLiveMode(enabled); }
         @JavascriptInterface public String outputs() { return engine.audioOutputs().toString(); }
         @JavascriptInterface public void mix(double vocal, double instrument) { engine.setMixLevels(vocal, instrument); }
         @JavascriptInterface public void stop() { engine.stop(); }
