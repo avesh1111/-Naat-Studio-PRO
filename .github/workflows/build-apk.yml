@@ -33,9 +33,15 @@ jobs:
       - name: Publish build run reference
         if: success()
         run: |
-          printf '{"run_id":%s,"commit":"%s","artifact":"NaatStudioPRO-native-debug-apk"}\n' "${{ github.run_id }}" "${{ github.sha }}" > BUILD-STATUS.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add BUILD-STATUS.json
-          git commit -m "chore: publish APK build reference [skip ci]" || exit 0
-          git push
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B build-report origin/main
+            printf '{"run_id":%s,"commit":"%s","artifact":"NaatStudioPRO-native-debug-apk"}\\n' "${{ github.run_id }}" "${{ github.sha }}" > BUILD-STATUS.json
+            git add BUILD-STATUS.json
+            git commit -m "chore: publish APK build reference [skip ci]" || exit 0
+            if git push origin HEAD:main; then exit 0; fi
+            sleep 3
+          done
+          exit 1
