@@ -38,7 +38,7 @@ jobs:
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B build-report origin/main
-            printf '{"run_id":%s,"commit":"%s","artifact":"NaatStudioPRO-native-debug-apk"}\\n' "${{ github.run_id }}" "${{ github.sha }}" > BUILD-STATUS.json
+            printf '{"run_id":%s,"commit":"%s","artifact":"NaatStudioPRO-native-debug-apk"}\n' "${{ github.run_id }}" "${{ github.sha }}" > BUILD-STATUS.json
             git add BUILD-STATUS.json
             git commit -m "chore: publish APK build reference [skip ci]" || exit 0
             if git push origin HEAD:main; then exit 0; fi
