@@ -17,7 +17,17 @@
 <div id="studioPage" style="display:none">
 <section class="panel"><div class="row" style="justify-content:space-between"><button class="btn ghost" onclick="showHome()">← ALL CATEGORIES</button><span class="chip" id="categoryBadge">MOBILE STUDIO</span></div><p class="catlead" id="categoryHelp"></p></section>
 <section id="mehfilMixer" class="panel" style="display:none"><h2>LIVE MEHFIL / DUAL INPUT MIXER</h2>
-<p class="help">Required: USB audio interface with two independent input channels. Input 1 (LEFT) = Vocal Mic + DD-8. Input 2 (RIGHT) = dry instruments / mixer submix. Both faders control PA output and one combined stereo WAV recording.</p>
+<p class="help">First use MIC ONLY SOUNDCHECK to check USB mic + PA output. Then choose 2-INPUT STEREO if your interface supports two independent capture channels. CH1 vocal gets DD-8, CH2 instruments remain clean.</p>
+<label>STAGE INPUT MODE</label>
+<select id="stageMode" onchange="onStageModeChange()">
+<option value="mono">1 — MIC ONLY SOUNDCHECK (one USB mic; mono)</option>
+<option value="stereo">2 — MIC + INSTRUMENTS (two-channel USB; combined WAV)</option>
+</select>
+<label>PA / MIXER AUDIO OUTPUT</label>
+<select id="stageOutput"><option value="default">Android default output (check routing!)</option></select>
+<div class="twocol"><button class="btn ghost" onclick="refreshDevices();refreshStageOutputs()">↻ REFRESH USB DEVICES</button><button class="btn" onclick="startMic()">▶ START LIVE MEHFIL MIC</button></div>
+<div class="status" id="stageDiag">CONNECT: Mic → interface MIC IN; interface USB → OTG → phone; interface LINE OUT → mixer LINE IN → PA. Select USB output before starting. Keep PA volume very low.</div>
+<p class="tiny" id="stageModeHelp">MIC ONLY SOUNDCHECK records effected vocal only. For instruments and combined WAV select stereo after checking microphone and output.</p>
 <div class="mixrow"><label>🎤 CH 1 — VOCAL MIC / DD-8 ON</label><span id="micMixVal" class="right">65%</span><input id="micMix" type="range" min="0" max="100" value="65"/><div class="mixbar"><b id="micMixMeter"></b></div></div>
 <div class="mixrow"><label>🎹 CH 2 — INSTRUMENTS / FX OFF</label><span id="instMixVal" class="right">55%</span><input id="instMix" type="range" min="0" max="100" value="55"/><div class="mixbar gold"><b id="instMixMeter"></b></div></div>
 <div class="notice">⚠ Never feed PA speaker output into the interface. Use LINE-level signal. Enable MONITOR only after a low-volume soundcheck; turn interface direct monitoring OFF to avoid doubled vocals. Separate faders require 2-channel USB capture supported by your phone.</div></section>
@@ -50,6 +60,7 @@ let active=0,bypass=false,isRunning=false,saveTimer=0,lastTap=0,taps=[];
 const id=k=>document.getElementById(k);
 const native=window.NativeApp;
 let currentCategory=null;
+let lastStageError='';
 function setMix(){id('micMixVal').textContent=id('micMix').value+'%';id('instMixVal').textContent=id('instMix').value+'%';if(native&&native.mix)native.mix(+id('micMix').value/100,+id('instMix').value/100);}
 ['micMix','instMix'].forEach(k=>id(k).addEventListener('input',setMix));
 function openCategory(category){
@@ -62,7 +73,7 @@ function openCategory(category){
  id('categoryHelp').textContent=m?'USB INPUT 1: VOCAL + DD-8 • USB INPUT 2: CLEAN INSTRUMENTS • COMBINED RECORDING':b?'Speak into PHONE MIC and hear DD-8 effects LIVE on Bluetooth speaker / earbuds. Set media audio output. Bluetooth latency is unavoidable.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
  id('recTitle').textContent=m?'04 / LIVE MEHFIL — COMBINED WAV RECORDER':b?'04 / EARBUDS NAAT WAV RECORDER':'04 / MOBILE NAAT WAV RECORDER';
  id('recordStatus').textContent=m?'READY • Two-channel USB input is required for combined recording.':'READY TO RECORD';
- id('monitor').checked=m||b;setMix();refreshDevices();if(b)refreshOutputs();window.scrollTo(0,0);
+ id('monitor').checked=m||b;setMix();refreshDevices();if(b)refreshOutputs();if(m){onStageModeChange();refreshStageOutputs();}window.scrollTo(0,0);
 }
 function showHome(){if(isRunning){if(!confirm('Stop current microphone and save any active recording before switching?'))return;stopMic();}
  currentCategory=null;id('studioPage').style.display='none';id('categoryHome').style.display='block';document.querySelector('.footer').hidden=true;window.scrollTo(0,0);
@@ -85,6 +96,35 @@ function loadChannel(i){active=i;const p=presets[i];id('level').value=p.level;id
 function refreshKnobs(){id('levelValue').textContent=id('level').value+'%';id('fbValue').textContent=id('fb').value+'%';id('timeValue').textContent=id('time').value+' ms';id('gateValue').textContent=id('gate').value+' dB';id('masterValue').textContent=id('master').value+'%';if(native)native.params(+id('level').value/100,+id('fb').value/100,+id('time').value,id('mode').value,+id('gate').value,+id('master').value/100,bypass);}
 ['level','fb','time','mode','gate','master'].forEach(k=>id(k).addEventListener('input',refreshKnobs));
 id('noiseReduction').addEventListener('change',()=>{if(native&&native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);});
+function onStageModeChange(){
+ const stereo=id('stageMode').value==='stereo';
+ id('stageModeHelp').textContent=stereo?
+ 'STEREO: USB IN LEFT = Vocal Mic + DD-8, RIGHT = dry instruments. Requires USB interface with independent stereo CAPTURE. App faders + combined recording work.':
+ 'SOUNDCHECK: One USB mic with DD-8; confirm meter and PA routing first. Instruments are not in app mix / recording. Connect instruments directly to mixer.';
+ id('recordStatus').textContent=stereo?'READY • Stereo mic+instruments combined WAV':'READY • Mono vocal-only WAV soundcheck';
+}
+function refreshStageOutputs(){
+ if(!native||!native.outputs)return;
+ try {
+  const found=JSON.parse(native.outputs());
+  const sel=id('stageOutput'),old=sel.value;
+  sel.innerHTML='';
+  const fallback=document.createElement('option');fallback.value='default';
+  fallback.textContent='Android default (not recommended for live PA)';sel.appendChild(fallback);
+  let preferred='';
+  found.filter(d=>d.id!=='default').forEach(d=>{
+    const o=document.createElement('option');o.value=d.id;
+    o.textContent=d.name + (d.kind==='usb'?' • USB LINE OUT':d.kind==='wired'?' • Wired Output':'');
+    sel.appendChild(o);
+    if(d.kind==='usb'&&!preferred)preferred=d.id;
+  });
+  if([...sel.options].some(o=>o.value===old)&&old!=='default')sel.value=old;
+  else if(preferred)sel.value=preferred;
+  if(sel.value==='default'){
+   id('stageDiag').textContent='⚠ No USB audio output selected. Connect OTG sound interface (USB output) and REFRESH, or use a suitable wired mixer output. Phone speaker may cause feedback.';
+  }else id('stageDiag').textContent='Output chosen. Connect interface LINE OUT to mixer LINE IN. Start with low PA volume. Test MIC ONLY first.';
+ }catch(e){id('stageDiag').textContent='Cannot list audio outputs: '+e.message;}
+}
 function refreshDevices(){
  if(!native){showStatus('Install the native Android APK to list microphones.',true);return;}
  let selected=id('device').value;
@@ -126,7 +166,18 @@ function startBluetoothLive(){
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
 function startMic(){if(!native){showStatus('This must run inside the Android APK.',true);return;}showStatus('Requesting Android native microphone…');if(!id('device').value){showStatus('Connect a compatible microphone first and press REFRESH MIC LIST.',true);return;}
  if(native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
- if(currentCategory==='mehfil')native.startMehfil(id('device').value,id('monitor').checked);else native.start(id('device').value,id('monitor').checked);}
+ if(currentCategory==='mehfil'){
+  lastStageError='';
+  if(!id('monitor').checked){
+   showStatus('Enable LIVE monitoring to hear microphone through PA output.',true);
+   return;
+  }
+  const out=id('stageOutput').value;
+  if(out==='default'){
+   id('stageDiag').textContent='⚠ Default output selected: Android may route sound to PHONE speaker. Check connections, choose USB output, then start with low volume.';
+  }
+  native.startMehfil(id('device').value,true,out,id('stageMode').value==='stereo');
+ }else native.start(id('device').value,id('monitor').checked);}
 function stopMic(){if(native)native.stop();isRunning=false;id('liveBtn').textContent='START MIC';id('footStatus').textContent='MICROPHONE OFF';}
 function toggleLive(){isRunning?stopMic():startMic();}
 function startRec(){if(!native)return;native.recordStart(id('recordName').value,currentCategory!=='mehfil'&&id('recordRaw').checked);}
@@ -137,11 +188,17 @@ id('bypassBtn').addEventListener('click',toggleBypass);
 function tapTempo(){let now=Date.now();if(now-lastTap>2800)taps=[];if(lastTap)taps.push(now-lastTap);if(taps.length>4)taps.shift();lastTap=now;let avg=taps.reduce((a,b)=>a+b,0)/(taps.length||1);if(taps.length&&avg>170){let bpm=Math.round(60000/avg);id('tempo').textContent=bpm+' BPM';id('time').value=Math.max(20,Math.min(2000,Math.round(avg/10)*10));refreshKnobs();}}
 window.nativeEvent=(type,txt)=>{
  if(type==='status'){
-   isRunning=txt.startsWith('MIC CONNECTED');id('nativeStatus').textContent=txt;id('liveBtn').textContent=isRunning?'STOP MIC':'START MIC';id('footStatus').textContent=isRunning?'MICROPHONE CONNECTED':'MICROPHONE OFF';showStatus(txt);
+   isRunning=txt.startsWith('MIC CONNECTED');id('nativeStatus').textContent=txt;id('liveBtn').textContent=isRunning?'STOP MIC':'START MIC';id('footStatus').textContent=isRunning?'MICROPHONE CONNECTED':'MICROPHONE OFF';
+   if(isRunning) lastStageError='';
+   if(currentCategory==='mehfil'&&!isRunning&&lastStageError)showStatus(lastStageError,true);
+   else showStatus(txt);
+ } else if(type==='stage'){id('stageDiag').textContent=txt;
  } else if(type==='noise'){id('noiseStatus').textContent=txt;
  } else if(type==='latency'){id('latencyStatus').textContent=txt;
  } else if(type==='route'){id('btRouteStatus').textContent=txt;showStatus(txt);
- } else if(type==='error'){if(currentCategory==='earbuds')id('btRouteStatus').textContent=txt;showStatus(txt,true);id('recordStatus').textContent=txt;
+ } else if(type==='error'){if(currentCategory==='earbuds')id('btRouteStatus').textContent=txt;
+ if(currentCategory==='mehfil'){lastStageError=txt;id('stageDiag').textContent=txt;}
+ showStatus(txt,true);id('recordStatus').textContent=txt;
  } else if(type==='hint'){showStatus(txt);
  } else if(type==='meter'){const d=Math.max(-80,Math.min(0,+txt));id('meterNum').textContent=d+' dBFS';id('meter').style.width=Math.max(0,(d+80)/80*100)+'%';
  } else if(type==='mixmeters'){
