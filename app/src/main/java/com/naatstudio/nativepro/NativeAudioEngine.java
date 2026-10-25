@@ -55,6 +55,9 @@ public final class NativeAudioEngine {
     private volatile double level = .6, feedback = .25, master = .15;
     private volatile double vocalVolume = .65, instrumentVolume = .55;
     private volatile boolean mehfil = false;
+    private volatile boolean stageVocalOnly = false;
+    private AudioDeviceInfo selectedInputDevice;
+
     private volatile int noiseStrength = 2; // 0 OFF, 1 LIGHT, 2 BALANCED, 3 STRONG
     private float expanderGain = 1f;
     private float noiseTone = 0f;
@@ -181,7 +184,10 @@ public final class NativeAudioEngine {
                 o.put("name", d.getProductName().toString() +
                     (isBluetoothPlaybackType(d.getType()) ? " (Bluetooth media output)" : " (wired / speaker)"));
                 o.put("kind", isBluetoothPlaybackType(d.getType()) ? "bt" :
-                    (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ? "phone" : "other"));
+                    (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ? "phone" :
+                    (d.getType() == AudioDeviceInfo.TYPE_USB_DEVICE || d.getType() == AudioDeviceInfo.TYPE_USB_HEADSET) ? "usb" :
+                    (d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET) ? "wired" : "other")));
+                o.put("type", d.getType());
                 found.put(o);
             }
         } catch (Exception ex) {
@@ -204,8 +210,13 @@ public final class NativeAudioEngine {
         start(requestedDevice, doMonitor, mehfilMode, "default");
     }
     synchronized void start(String requestedDevice, boolean doMonitor, boolean mehfilMode, String requestedOutput) {
+        start(requestedDevice, doMonitor, mehfilMode, requestedOutput, false);
+    }
+    synchronized void start(String requestedDevice, boolean doMonitor, boolean mehfilMode, String requestedOutput, boolean vocalOnlySoundcheck) {
         stop();
         mehfil = mehfilMode;
+        stageVocalOnly = vocalOnlySoundcheck;
+        selectedInputDevice = null;
         requestedPlaybackDevice = null;
         bluetoothPlayback = false;
         if (requestedOutput != null && !requestedOutput.equals("default")) {
@@ -222,7 +233,7 @@ public final class NativeAudioEngine {
                 return;
             }
             if (requestedPlaybackDevice == null) {
-                emit("error", "Selected Bluetooth output disconnected. Reconnect and refresh output list.");
+                emit("error", "Selected audio output disconnected. Reconnect the USB interface or speaker and refresh.");
                 return;
             }
         }
@@ -230,8 +241,8 @@ public final class NativeAudioEngine {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
         }
-        if (mehfilMode && (requestedDevice == null || "default".equals(requestedDevice))) {
-            emit("error", "Live Mehfil requires a 2-channel USB audio interface. Select USB input."); return;
+        if ((mehfilMode || stageVocalOnly) && (requestedDevice == null || "default".equals(requestedDevice))) {
+            emit("error", "Live Mehfil requires USB audio input. Connect interface via OTG and tap REFRESH."); return;
         }
         boolean chosenBluetooth = false;
         AudioDeviceInfo chosen = null;
@@ -242,9 +253,23 @@ public final class NativeAudioEngine {
                 }
             } catch (SecurityException err) { emit("hint", "Nearby devices permission is required for Bluetooth input."); }
             if (chosen == null) { emit("error", "Selected mic disappeared. Choose Android default and retry."); return; }
-            if (mehfilMode && chosen.getType() != AudioDeviceInfo.TYPE_USB_DEVICE && chosen.getType() != AudioDeviceInfo.TYPE_USB_HEADSET) {
-                emit("error", "Live Mehfil requires a USB audio interface with two independent inputs."); return;
+            if ((mehfilMode || stageVocalOnly) &&
+                 chosen.getType() != AudioDeviceInfo.TYPE_USB_DEVICE &&
+                 chosen.getType() != AudioDeviceInfo.TYPE_USB_HEADSET) {
+                emit("error", "Live Mehfil input must be USB audio interface. Select USB mic from list."); return;
             }
+            if (mehfilMode) {
+                int[] availableCounts = chosen.getChannelCounts();
+                if (availableCounts.length > 0) {
+                    boolean stereoSupported = false;
+                    for (int n : availableCounts) if (n >= 2) stereoSupported = true;
+                    if (!stereoSupported) {
+                        emit("error", "This USB device reports MONO input. Select MIC ONLY SOUNDCHECK or use 2-channel USB interface.");
+                        return;
+                    }
+                }
+            }
+            selectedInputDevice = chosen;
             chosenBluetooth = chosen.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                 (Build.VERSION.SDK_INT >= 31 && chosen.getType() == AudioDeviceInfo.TYPE_BLE_HEADSET);
         }
@@ -310,7 +335,8 @@ public final class NativeAudioEngine {
                 (mehfil ? " • instruments remain clean" : ""));
             if (chosen != null) {
                 if (!input.setPreferredDevice(chosen)) {
-                    if (mehfilMode) throw new IllegalStateException("Cannot route selected USB interface; verify OTG connection.");
+                    if (mehfilMode || stageVocalOnly)
+                        emit("hint", "USB preferred input not accepted yet; checking active routing after recording starts.");
                     emit("hint", "Android did not accept preferred mic routing. Recording source may differ.");
                 }
             }
@@ -356,18 +382,15 @@ public final class NativeAudioEngine {
             monitor = doMonitor;
             input.startRecording();
             if (input.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) throw new IllegalStateException("Microphone was rejected by Android audio service.");
-            if (mehfilMode) {
-                AudioDeviceInfo actual = input.getRoutedDevice();
-                if (actual == null || chosen == null || actual.getId() != chosen.getId())
-                    throw new IllegalStateException("USB input routing is unconfirmed. Cannot safely separate mic/instruments.");
-            }
+            // Android may report getRoutedDevice() as null until AFTER the first capture buffers.
+            // Defer route validation into the worker instead of aborting on startup.
             if (monitor) output.play();
             running.set(true);
             worker = new Thread(this::processStream, "NaatStudioAudioEngine");
             worker.setPriority(Thread.MAX_PRIORITY);
             worker.start();
             emit("status", "MIC CONNECTED • " +
-                (mehfilMode ? "MEHFIL 2-CHANNEL USB" : bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
+                (mehfilMode ? "MEHFIL USB STEREO" : stageVocalOnly ? "MEHFIL USB MIC SOUNDCHECK" : bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
                 " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth microphone requested" : ""));
             if (bluetoothPlayback) {
                 emit("hint", "Bluetooth media output requested. Fast Live " + (fastLiveMode ? "ON" : "OFF") +
@@ -377,8 +400,10 @@ public final class NativeAudioEngine {
                     (1000 * output.getBufferSizeInFrames() / sampleRate) + " ms • transport latency not measured");
             }
         } catch (Exception e) {
-            emit("error", "Mic could not start: " + e.getMessage() + ". Close other mic apps and try phone mic first.");
+            String detail = "Mic could not start: " + e.getMessage() +
+                ". Check OTG, mic power, USB permissions and close other audio apps.";
             stop();
+            emit("error", detail);
         }
     }
     private void initDSP() {
@@ -501,10 +526,45 @@ public final class NativeAudioEngine {
         int tick = 0;
         long liveDiagFrames = 0;
         int outputRouteCheck = 0;
+        int stageRouteFrames = 0;
+        boolean stageInputVerified = false;
+        boolean stageOutputVerified = false;
         try {
             while (running.get()) {
                 int count = input.read(pcmIn, 0, pcmIn.length, AudioRecord.READ_BLOCKING);
                 if (count <= 0) { if (count < 0) emit("error", "Android AudioRecord read error: " + count); break; }
+                if (mehfil || stageVocalOnly) {
+                    stageRouteFrames += count / (mehfil ? 2 : 1);
+                    if (stageRouteFrames >= sampleRate / 4) {
+                        stageRouteFrames = 0;
+                        AudioDeviceInfo liveIn = input.getRoutedDevice();
+                        if (liveIn != null && selectedInputDevice != null &&
+                            liveIn.getId() != selectedInputDevice.getId()) {
+                            emit("error", "USB MIC ROUTE ERROR: Android is using " + liveIn.getProductName() +
+                                " instead of selected " + selectedInputDevice.getProductName() +
+                                ". Check OTG and choose USB input again.");
+                            break;
+                        }
+                        if (!stageInputVerified && liveIn != null) {
+                            stageInputVerified = true;
+                            emit("stage", "USB MIC ACTIVE: " + liveIn.getProductName() + " • " +
+                                (mehfil ? "Stereo Mic+Instrument" : "Mono vocal soundcheck"));
+                        }
+                        if (!stageOutputVerified && monitor) {
+                            AudioDeviceInfo liveOut = output.getRoutedDevice();
+                            if (liveOut != null) {
+                                stageOutputVerified = true;
+                                if (requestedPlaybackDevice != null &&
+                                    liveOut.getId() != requestedPlaybackDevice.getId()) {
+                                    emit("error", "STAGE OUTPUT ROUTE ERROR: audio is playing on " +
+                                        liveOut.getProductName() + ". Reconnect/select USB output; check mixer LINE IN.");
+                                    break;
+                                }
+                                emit("stage", "SPEAKER OUTPUT ACTIVE: " + liveOut.getProductName());
+                            }
+                        }
+                    }
+                }
                 chunk.clear();
                 double vocalPeak = 0, instPeak = 0;
                 int valid = mehfil ? count - count % 2 : count;
@@ -527,7 +587,7 @@ public final class NativeAudioEngine {
                 } else {
                     for (int i = 0; i < valid; i++) {
                         float original = pcmIn[i] / 32768f;
-                        float affected = process(original);
+                        float affected = process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
                         short processed = (short)(clamp(affected, -1, 1) * 32767);
                         pcmOut[i] = (short)(clamp(affected * master, -1, 1) * 32767);
                         chunk.putShort(recordRaw ? pcmIn[i] : processed);
@@ -601,6 +661,8 @@ public final class NativeAudioEngine {
         if (ns != null) { ns.release(); ns = null; }
         if (output != null) { try { output.pause(); output.flush(); } catch (Exception ignored) {} output.release(); output = null; }
         requestedPlaybackDevice = null;
+        selectedInputDevice = null;
+        stageVocalOnly = false;
         bluetoothPlayback = false;
         if (audioManager != null && Build.VERSION.SDK_INT >= 31) {
             try { audioManager.clearCommunicationDevice(); audioManager.setMode(AudioManager.MODE_NORMAL); } catch (Exception ignored) {}
