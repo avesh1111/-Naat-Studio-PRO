@@ -1,0 +1,107 @@
+name: iOS TestFlight (Manual Upload)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_upload:
+        description: "Type UPLOAD to send a signed build to Apple"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: naat-studio-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    if: ${{ inputs.confirm_upload == 'UPLOAD' }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      ASC_API_KEY_ID: ${{ vars.ASC_API_KEY_ID }}
+      ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Confirm configuration exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_TEAM_ID" || { echo "::error::Missing Actions variable APPLE_TEAM_ID"; exit 1; }
+          test -n "$ASC_API_KEY_ID" || { echo "::error::Missing Actions variable ASC_API_KEY_ID"; exit 1; }
+          test -n "$ASC_ISSUER_ID" || { echo "::error::Missing Actions variable ASC_ISSUER_ID"; exit 1; }
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate iOS project
+        run: cd ios && xcodegen generate
+
+      - name: Prepare temporary Apple private key
+        shell: bash
+        env:
+          APP_STORE_PRIVATE_KEY: ${{ secrets.ASC_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_STORE_PRIVATE_KEY" || { echo "::error::Missing Actions secret ASC_API_PRIVATE_KEY"; exit 1; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/naat-apple"
+          printf '%s\n' "$APP_STORE_PRIVATE_KEY" > "$RUNNER_TEMP/naat-apple/AuthKey.p8"
+          grep -q 'BEGIN PRIVATE KEY' "$RUNNER_TEMP/naat-apple/AuthKey.p8" || { echo "::error::Check Apple .p8 private key"; exit 1; }
+
+      - name: Archive signed iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project ios/NaatStudioPRO.xcodeproj \
+            -scheme NaatStudioPRO \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/NaatStudioPRO.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/naat-apple/AuthKey.p8" \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            archive
+
+      - name: Create App Store Connect export configuration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,plistlib
+          with open(os.path.join(os.environ['RUNNER_TEMP'],'ExportOptions.plist'),'wb') as f:
+              plistlib.dump({
+                  'method':'app-store-connect',
+                  'destination':'upload',
+                  'signingStyle':'automatic',
+                  'teamID':os.environ['APPLE_TEAM_ID'],
+                  'manageAppVersionAndBuildNumber':True
+              },f)
+          PY
+
+      - name: Sign and upload to TestFlight
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/NaatStudioPRO.xcarchive" \
+            -exportPath "$RUNNER_TEMP/NaatStudioExport" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/naat-apple/AuthKey.p8" \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "Apple upload finished. TestFlight processing is separate."
+
+      - name: Delete temporary private key
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/naat-apple"
