@@ -166,6 +166,7 @@ let lastStageError='';
 function setMix(){id('micMixVal').textContent=id('micMix').value+'%';id('instMixVal').textContent=id('instMix').value+'%';if(native&&native.mix)native.mix(+id('micMix').value/100,+id('instMix').value/100);}
 ['micMix','instMix'].forEach(k=>id(k).addEventListener('input',setMix));
 function openCategory(category){
+ hideProfileSettings();id('luxHeader').style.display='block';navSelect(category==='mehfil'?'mixer':'home');
  if(isRunning)stopMic(); currentCategory=category;
  id('categoryHome').style.display='none';id('studioPage').style.display='block';document.querySelector('.footer').hidden=false;
  const m=category==='mehfil', b=category==='earbuds';
@@ -177,7 +178,7 @@ function openCategory(category){
  id('recordStatus').textContent=m?'READY • Two-channel USB input is required for combined recording.':'READY TO RECORD';
  id('monitor').checked=m||b;setMix();refreshDevices();if(b)refreshOutputs();if(m){onStageModeChange();refreshStageOutputs();}window.scrollTo(0,0);
 }
-function showHome(){if(isRunning){if(!confirm('Stop current microphone and save any active recording before switching?'))return;stopMic();}
+function showHome(){hideProfileSettings();id('luxHeader').style.display='block';navSelect('home');if(isRunning){if(!confirm('Stop current microphone and save any active recording before switching?'))return;stopMic();}
  currentCategory=null;id('studioPage').style.display='none';id('categoryHome').style.display='block';document.querySelector('.footer').hidden=true;window.scrollTo(0,0);
 }
 function persist(){savePresetStorage();}
@@ -194,7 +195,7 @@ function bindPresetButtons(){let el=id('presetBar');el.innerHTML='';presets.forE
 });}
 function current(){return{level:Number(id('level').value),fb:Number(id('fb').value),time:Number(id('time').value),mode:id('mode').value,hall:id('hallEnabled').checked};}
 function saveCurrent(i){Object.assign(presets[i],current());persist();id('savedNotice').textContent='✓ CH'+(i+1)+' SAVED';bindPresetButtons();setTimeout(()=>id('savedNotice').textContent='SAVED PRESETS',1800);}
-function loadChannel(i){active=i;const p=presets[i];id('level').value=p.level;id('fb').value=p.fb;id('time').value=p.time;id('mode').value=p.mode;id('hallEnabled').checked=!!p.hall;id('selectedName').textContent='CH'+(i+1)+' — '+p.name;refreshKnobs();bindPresetButtons();renderPresetLibrary();}
+function loadChannel(i){active=i;const p=presets[i];id('level').value=p.level;id('fb').value=p.fb;id('time').value=p.time;id('mode').value=p.mode;id('hallEnabled').checked=!!p.hall;id('selectedName').textContent='CH'+(i+1)+' — '+p.name;refreshKnobs();bindPresetButtons();renderPresetLibrary();updateHeroChannels();}
 function refreshKnobs(){id('levelValue').textContent=id('level').value+'%';id('fbValue').textContent=id('fb').value+'%';id('timeValue').textContent=id('time').value+' ms';id('gateValue').textContent=id('gate').value+' dB';id('masterValue').textContent=id('master').value+'%';if(native&&native.hall)native.hall(id('hallEnabled').checked);if(native)native.params(+id('level').value/100,+id('fb').value/100,+id('time').value,id('mode').value,+id('gate').value,+id('master').value/100,bypass);}
 ['level','fb','time','mode','gate','master','hallEnabled'].forEach(k=>id(k).addEventListener('input',refreshKnobs));
 id('presetSearch').addEventListener('input',renderPresetLibrary);
@@ -313,5 +314,15 @@ window.nativeEvent=(type,txt)=>{
  } else if(type==='loop'){id('tempo').textContent='LOOP '+txt;}
 };
 loadChannel(0);setInterval(()=>id('led').classList.toggle('on'),570);
-setMix();renderPresetLibrary();if(native&&native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
+setMix();renderPresetLibrary();updateHeroChannels();loadProfile();navSelect('home');if(native&&native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
+
+function navSelect(which){['home','presets','mixer','settings'].forEach(n=>{const b=id('nav'+n[0].toUpperCase()+n.slice(1));if(b)b.classList.toggle('selected',which===n);});}
+function hideProfileSettings(){id('profilePage').style.display='none';id('settingsPage').style.display='none';}
+function showProfile(){if(isRunning)stopMic();hideProfileSettings();id('luxHeader').style.display='none';id('categoryHome').style.display='none';id('studioPage').style.display='none';id('profilePage').style.display='block';document.querySelector('.footer').hidden=true;navSelect('settings');loadProfile();window.scrollTo(0,0);}
+function showSettings(){if(isRunning)stopMic();hideProfileSettings();id('luxHeader').style.display='none';id('categoryHome').style.display='none';id('studioPage').style.display='none';id('settingsPage').style.display='block';document.querySelector('.footer').hidden=true;navSelect('settings');window.scrollTo(0,0);}
+function openPresets(){hideProfileSettings();id('luxHeader').style.display='block';id('categoryHome').style.display='none';id('studioPage').style.display='block';document.querySelector('.footer').hidden=!isRunning;navSelect('presets');renderPresetLibrary();id('libraryPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+function openMixer(){openCategory('mehfil');navSelect('mixer');id('mehfilMixer').scrollIntoView({behavior:'smooth',block:'start'});}
+function updateHeroChannels(){const wrap=id('heroChannels');if(!wrap)return;wrap.innerHTML='';presets.forEach((p,i)=>{const btn=document.createElement('button');btn.type='button';btn.className=i===active?'chosen':'';btn.innerHTML='<b>≋</b>CH'+(i+1);btn.title=p.name;btn.addEventListener('click',()=>loadChannel(i));wrap.appendChild(btn);});if(id('homePresetName'))id('homePresetName').textContent=presets[active].name;}
+function saveProfile(ev){ev.preventDefault();const name=id('profileName').value.trim(),phone=id('profilePhone').value.trim(),dob=id('profileDob').value,email=id('profileEmail').value.trim();const status=id('profileSaved');if(!name||phone.length<8||phone.length>16||!dob||!email.includes('@')){status.className='status error';status.textContent='Please enter all four fields correctly.';return;}const today=new Date().toISOString().slice(0,10);if(dob>today){status.className='status error';status.textContent='Date of birth cannot be in the future.';return;}try{localStorage.setItem('naat_studio_profile_v1',JSON.stringify({name,phone,dob,email}));status.className='status';status.textContent='✓ Profile saved locally on your phone.';}catch(err){status.className='status error';status.textContent='Unable to save profile on this device.';}}
+function loadProfile(){try{const p=JSON.parse(localStorage.getItem('naat_studio_profile_v1')||'{}');id('profileName').value=p.name||'';id('profilePhone').value=p.phone||'';id('profileDob').value=p.dob||'';id('profileEmail').value=p.email||'';}catch(e){}}
 </script></body></html>
