@@ -319,6 +319,8 @@ final class IOSAudio {
         var vocalPeak: Float = 0
         var instrumentPeak: Float = 0
         let channels = Int(src.format.channelCount)
+        var recordedLeft = [Float](repeating:0,count:n)
+        var recordedRight = [Float](repeating:0,count:n)
         for i in 0..<n {
             let sourceVocal = input[0][i]
             let sourceInstrument: Float = stageStereo && channels > 1 ? input[1][i] : 0
@@ -327,6 +329,8 @@ final class IOSAudio {
                            stageStereo: stageStereo, monitoring: monitor)
             data[0][i] = left
             data[1][i] = right
+            recordedLeft[i] = processedMic
+            recordedRight[i] = stageStereo ? processedInstrument : processedMic
             vocalPeak = max(vocalPeak, abs(processedMic))
             instrumentPeak = max(instrumentPeak, abs(processedInstrument))
         }
@@ -350,10 +354,9 @@ final class IOSAudio {
                 if let recorded = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: src.frameLength),
                    let a = recorded.floatChannelData {
                     recorded.frameLength = src.frameLength
-                    let factor: Float = monitor ? Float(max(0.0001, dsp.master)) : 1
                     for i in 0..<n {
-                        a[0][i] = monitor ? data[0][i]/factor : data[0][i]
-                        a[1][i] = monitor ? data[1][i]/factor : data[1][i]
+                        a[0][i] = recordedLeft[i]
+                        a[1][i] = recordedRight[i]
                     }
                     do { try recorder.write(from: recorded) }
                     catch { event?("error", "Cannot write WAV: \(error.localizedDescription)") }
