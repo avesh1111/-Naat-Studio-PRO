@@ -3,7 +3,7 @@ import WebKit
 import AVFoundation
 import AVKit
 
-final class StudioViewController: UIViewController, WKScriptMessageHandler {
+final class StudioViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate {
     private var web: WKWebView!
     private let audio = IOSAudio()
     private let picker = AVRoutePickerView(frame: .zero)
@@ -36,6 +36,7 @@ final class StudioViewController: UIViewController, WKScriptMessageHandler {
         user.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let config = WKWebViewConfiguration(); config.userContentController = user
         web = WKWebView(frame: .zero, configuration: config)
+        web.navigationDelegate = self
         web.isOpaque=false; web.backgroundColor=view.backgroundColor
         web.scrollView.contentInsetAdjustmentBehavior = .never
         view.addSubview(web); web.translatesAutoresizingMaskIntoConstraints=false
@@ -55,6 +56,15 @@ final class StudioViewController: UIViewController, WKScriptMessageHandler {
         if let page = Bundle.main.url(forResource:"index",withExtension:"html",subdirectory:"assets"){
             web.loadFileURL(page,allowingReadAccessTo:page.deletingLastPathComponent())
         } else {notify("error","HTML assets missing from bundle")}
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Initial route enumeration is required before Live Mehfil presses START:
+        // without this, the USB microphone list would remain Android-style default.
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .default,
+                                 options: [.allowBluetoothA2DP, .defaultToSpeaker])
+        try? session.setActive(true)
+        routes()
     }
     private func json(_ s:String)->String {
        let data=try! JSONSerialization.data(withJSONObject:[s])
