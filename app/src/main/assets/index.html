@@ -40,6 +40,25 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 .bottomNav{position:fixed;left:6px;right:6px;bottom:5px;z-index:1000;max-width:910px;margin:auto;display:flex;justify-content:space-around;padding:5px 3px calc(8px + env(safe-area-inset-bottom));background:linear-gradient(150deg,#183b60,#06182e);border:1px solid #457caf;border-radius:25px;box-shadow:0 -7px 25px #000a}.bottomNav button{width:24%;font-size:24px;background:none;border:0;box-shadow:none;color:#b1d9f9;padding:5px 0}.bottomNav button small{display:block;font-size:10px}.bottomNav button.selected{background:linear-gradient(145deg,#1667ad,#082851);color:#fff;border-radius:18px;text-shadow:0 0 12px #00e5ff}.footer{bottom:83px!important}
 .avatar{width:93px;height:93px;border-radius:50%;margin:15px auto;display:grid;place-items:center;font-size:57px;background:radial-gradient(circle,#83daff,#0b4682);box-shadow:0 0 21px #00beff}.profileSave{width:100%;min-height:55px;margin:15px 0}#profileForm input{width:100%;min-height:48px;margin:7px 0 17px;padding:10px;background:#091e3b!important;color:#fff!important;border:1px solid #4386c1;border-radius:13px;color-scheme:dark}.settingsTile{width:100%;display:block;margin:9px 0;padding:15px;background:linear-gradient(145deg,#214e79,#0c2947);border:1px solid #3b85b9;color:white;text-align:left}
 #libraryPanel .mixrow{border:1px solid #2d6caa!important;background:linear-gradient(145deg,#153f6b,#081c32)!important;position:relative}#libraryPanel .mixrow:before{content:'☾';display:inline-grid;place-items:center;color:#f1cf94;background:linear-gradient(#158be0,#071a3f);width:35px;height:35px;border-radius:10px;margin-right:6px;float:left}#libraryPanel .mixrow .btn{margin-top:8px}
+</style><style id="backgrounds-fix-v10">
+/* Each background region is an independently correct slice of the verified sprite:
+   full-width mosque skyline on first row; mic, earbuds, phone on second row. */
+.mosqueWave{
+  background-image:linear-gradient(0deg,rgba(4,23,40,.12),rgba(6,22,44,.1)),url('backgrounds.webp')!important;
+  background-repeat:no-repeat!important;
+  background-size:100% 200%,100% 200%!important;
+  background-position:center top!important;
+  background-color:#071d36!important;
+}
+.catPhoto{
+  background-image:url('backgrounds.webp')!important;
+  background-repeat:no-repeat!important;
+  background-size:300% 200%!important;
+  background-color:#071d36!important;
+}
+.catPhoto.pMic{background-position:0% 100%!important}
+.catPhoto.pEarbuds{background-position:50% 100%!important}
+.catPhoto.pMobile{background-position:100% 100%!important}
 </style></head><body>
 <main>
 <header id="luxHeader"><div class="topnav"><button onclick="showSettings()" aria-label="Menu">☰</button><button onclick="showProfile()" aria-label="My Profile">♙</button></div><div class="mark">PROFESSIONAL VOCAL FX STUDIO</div><h1>NAAT STUDIO <span style="color:#02dcf7">PRO</span></h1><div class="sub">Professional Vocal FX Studio</div><div class="mosqueWave" aria-hidden="true">☾</div><div class="heroChannels" id="heroChannels"></div></header>
