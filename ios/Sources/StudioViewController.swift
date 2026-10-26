@@ -94,98 +94,21 @@ final class StudioViewController: UIViewController, WKScriptMessageHandler {
         switch method {
         case "savePresets":let p=str(0);if p.utf8.count<20000 {UserDefaults.standard.set(p,forKey:"presets")}
         case "start":audio.start(input:str(0),monitor:bool(1),stage:false)
-        case "stage":if bool(3){notify("error","iOS two-channel USB mixing not yet supported. Choose MIC ONLY.")}else{audio.start(input:str(0),monitor:true,stage:true)}
+        case "stage":audio.start(input:str(0),monitor:true,stage:true,stereo:bool(3),outputID:str(2,"default"))
         case "bt":audio.start(input:"default",monitor:true,stage:false)
         case "stop":audio.stop()
-        case "params":audio.configure(level:num(0,0.6),feedback:num(1,0.25),milliseconds:num(2,380),mode:str(3,"STANDARD"),master:num(5,0.15),bypass:bool(6))
-        case "hall":audio.hall=bool(0);audio.update()
-        case "record":audio.record(name:str(0,"Naat"))
+        case "params":audio.configure(level:num(0,0.6),feedback:num(1,0.25),milliseconds:num(2,380),mode:str(3,"STANDARD"),gate:num(4,-50),master:num(5,0.15),bypass:bool(6))
+        case "hall":audio.setHall(bool(0))
+        case "record":audio.record(name:str(0,"Naat"),raw:bool(1))
         case "recordStop":audio.finish()
         case "play":audio.play()
         case "pick":notify("hint","Use the iOS audio route picker at the top-right for Bluetooth or USB output.")
-        case "noise":notify("noise","Advanced Android noise suppression is unavailable in this iOS version.")
-        case "loop","warp":notify("hint","This DD-8 processing mode has not been ported to iPhone.")
+        case "noise":audio.setNoise(Int(num(0,2)))
+        case "mix":audio.setMix(vocal:num(0,0.65),instrument:num(1,0.55))
+        case "loop":audio.loop(str(0))
+        case "warp":audio.setWarp(bool(0))
         default:break
         }
         if ["start","stage","bt"].contains(method) {DispatchQueue.main.asyncAfter(deadline:.now()+0.5){self.routes()}}
     }
-}
-final class IOSAudio {
-    var event:((String,String)->Void)?
-    private var engine:AVAudioEngine?
-    private var delay:AVAudioUnitDelay?
-    private var reverb:AVAudioUnitReverb?
-    private var file:AVAudioFile?
-    private var last:URL?
-    private var player:AVAudioPlayer?
-    private var monitor=false
-    private var level=0.6,feedback=0.25,milliseconds=380.0,master=0.15
-    private var mode="STANDARD", bypass=false
-    var hall=false
-    func start(input:String,monitor:Bool,stage:Bool){
-        stop();self.monitor=monitor
-        AVAudioSession.sharedInstance().requestRecordPermission {[weak self] allowed in
-            DispatchQueue.main.async {
-                guard let self=self else{return}
-                guard allowed else {self.event?("error","Allow microphone in iPhone Settings.");return}
-                self.startGranted(input:input,stage:stage)
-            }
-        }
-    }
-    private func startGranted(input:String,stage:Bool){
-        do {
-            let session=AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord,mode:.default,options:[.allowBluetoothA2DP,.defaultToSpeaker])
-            try session.setPreferredSampleRate(48000)
-            try session.setPreferredIOBufferDuration(0.01)
-            try session.setActive(true)
-            let usb=(session.availableInputs ?? []).first(where:{$0.portType == .usbAudio})
-            if stage && usb == nil {event?("error","USB microphone/interface not detected on this iPhone.");return}
-            if stage,let port=usb {try session.setPreferredInput(port)}
-            else if let mic=(session.availableInputs ?? []).first(where:{$0.portType == .builtInMic}) {try session.setPreferredInput(mic)}
-            let g=AVAudioEngine(),d=AVAudioUnitDelay(),r=AVAudioUnitReverb()
-            g.attach(d);g.attach(r)
-            let fmt=g.inputNode.outputFormat(forBus:0)
-            guard fmt.channelCount>0 else {event?("error","No input channels.");return}
-            g.connect(g.inputNode,to:d,format:fmt);g.connect(d,to:r,format:fmt);g.connect(r,to:g.mainMixerNode,format:fmt)
-            engine=g;delay=d;reverb=r;update()
-            r.installTap(onBus:0,bufferSize:1024,format:fmt){[weak self] buf,_ in
-                guard let self=self,let output=self.file else{return}
-                do {try output.write(from:buf)}catch{self.event?("error","WAV write error.")}
-            }
-            try g.start()
-            event?("status","MIC CONNECTED • iOS \(Int(fmt.sampleRate)) Hz")
-            if stage {event?("stage","USB mic-only soundcheck. Use wired/USB output to mixer. iOS stereo instruments unavailable.")}
-            event?("latency","Bluetooth speaker/earbuds latency depends on iOS hardware; zero delay not possible.")
-        }catch{event?("error","iOS audio error: \(error.localizedDescription)")}
-    }
-    func configure(level:Double,feedback:Double,milliseconds:Double,mode:String,master:Double,bypass:Bool){
-        self.level=level;self.feedback=feedback;self.milliseconds=milliseconds;self.mode=mode;self.master=master;self.bypass=bypass;update()
-    }
-    func update(){
-        delay?.delayTime=min(2,max(0.02,milliseconds/1000))
-        delay?.feedback=Float(min(90,max(0,feedback*95)))
-        delay?.wetDryMix=bypass ? 0:Float(min(100,max(0,level*100)))
-        reverb?.loadFactoryPreset(.largeHall)
-        reverb?.wetDryMix = (!bypass && (hall || mode == "+RV")) ? 25:0
-        engine?.mainMixerNode.outputVolume=monitor ? Float(master):0
-        if !["ANALOG","STANDARD","TAPE","WARM","+RV"].contains(mode) {event?("hint","iOS currently approximates this DD-8 mode with standard delay.")}
-    }
-    func record(name:String){
-        guard engine?.isRunning == true,let rev=reverb else {event?("record","Start mic before recording.");return}
-        do {
-            let folder=FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0].appendingPathComponent("Recordings",isDirectory:true)
-            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
-            let safe=String(name.replacingOccurrences(of:"[^A-Za-z0-9_-]",with:"_",options:.regularExpression).prefix(40))
-            let dest=folder.appendingPathComponent("\(safe)_\(Int(Date().timeIntervalSince1970)).wav")
-            file=try AVAudioFile(forWriting:dest,settings:rev.outputFormat(forBus:0).settings,commonFormat:.pcmFormatFloat32,interleaved:false)
-            last=dest;event?("record","RECORDING WAV")
-        }catch{event?("error","Cannot start recording: \(error.localizedDescription)")}
-    }
-    func finish(){file=nil;event?("record",last == nil ? "NO RECORDING":"WAV SAVED IN DOCUMENTS / RECORDINGS")}
-    func play(){
-        guard let url=last else {event?("record","No recording yet.");return}
-        do{player=try AVAudioPlayer(contentsOf:url);player?.play();event?("record","PLAYING RECORDING")}catch{event?("error","Cannot play WAV.")}
-    }
-    func stop(){file=nil;if let r=reverb{r.removeTap(onBus:0)};engine?.stop();engine=nil;delay=nil;reverb=nil;event?("status","MIC STOPPED")}
 }
