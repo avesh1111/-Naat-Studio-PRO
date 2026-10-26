@@ -22,9 +22,9 @@ An IPA for other users needs iOS signing and provisioning, generally through an 
 - CH1–CH5 preset selection, 61 preset names, local custom presets, profile: YES. Storage is per device, NOT synchronized between Android and iOS.
 - Built-in iPhone microphone, monitoring, standard delay/Hall approximation and local WAV: Initial implementation; on-device verification required.
 - Bluetooth playback: select an output using the native iOS route picker. Built-in mic + A2DP playback may have substantial lag.
-- Live Mehfil USB mic-only: initial soundcheck implementation, compatible iOS USB input required.
-- Two-channel USB mic + dry instruments, independent instrument mix and combined recording: **not ported to iOS yet**.
-- Android-specific noise reduction, loop/warp/GLT/SHIM, and full 11 DD-8 native DSP algorithms: **not ported to iOS yet**.
+- Live Mehfil USB mic-only and two-input stereo routing: an experimental DSP implementation is present. Requires compatible iOS USB interface exposing two independent inputs; stereo sends processed vocal left and dry instruments right. Real-device PA tests are mandatory.
+- Two-channel USB mic + dry instruments, independent instrument faders, combined stereo WAV: **initial iOS implementation added and simulator-compiles, but real hardware routing and latency have not been validated**.
+- 11 DD-8 labels now have iOS software processing approximations; loop/warp/GLT/SHIM and simple software noise gate included. **Full Android DSP parity and professional-grade acoustic noise suppression are not proven**. Built-in output is still buffered; low latency is not guaranteed.
 - Hardware feedback detection or guaranteed low latency: NOT provided. Start with low PA/earbuds volume.
 
 Important: This is a first iOS source implementation. It has not been signed, installed or tested on an iPhone. iOS simulator compile checks do not verify physical USB/Bluetooth routing.
