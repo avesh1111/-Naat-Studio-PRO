@@ -115,6 +115,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void hall(boolean enabled) { engine.setHallEnabled(enabled); }
         @JavascriptInterface public void noiseReduction(int strength) { engine.setNoiseReduction(strength); }
         @JavascriptInterface public void fastLive(boolean enabled) { engine.setFastLiveMode(enabled); }
+        @JavascriptInterface public void bluetoothDryTest(boolean enabled) { engine.setBluetoothDryTest(enabled); }
         @JavascriptInterface public String outputs() { return engine.audioOutputs().toString(); }
         @JavascriptInterface public void mix(double vocal, double instrument) { engine.setMixLevels(vocal, instrument); }
         @JavascriptInterface public void stop() { engine.stop(); }
