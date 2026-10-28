@@ -43,6 +43,7 @@ public final class NativeAudioEngine {
     private AudioDeviceInfo requestedPlaybackDevice;
     private volatile boolean bluetoothPlayback = false;
     private volatile boolean fastLiveMode = false;
+    private volatile boolean bluetoothDryTest = false;
     private long monitorFramesWritten = 0;
     private long outputDrops = 0;
     private AutomaticGainControl agc;
@@ -105,6 +106,8 @@ public final class NativeAudioEngine {
     void setWarp(boolean b) { warp = b; }
     void setHallEnabled(boolean enabled) { hallEnabled = enabled; }
     void setFastLiveMode(boolean enabled) { fastLiveMode = enabled; }
+    // Direct PCM soundcheck bypasses app DSP; Android/Bluetooth transport delay still exists.
+    void setBluetoothDryTest(boolean enabled) { bluetoothDryTest = enabled; }
 
     synchronized void setNoiseReduction(int strength) {
         noiseStrength = (int)clamp(strength, 0, 3);
@@ -614,7 +617,10 @@ public final class NativeAudioEngine {
                 } else {
                     for (int i = 0; i < valid; i++) {
                         float original = pcmIn[i] / 32768f;
-                        float affected = process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
+                        // An honest dry test: skip ALL app effects to isolate transport latency.
+                        // Do not claim this makes Bluetooth A2DP instantaneous.
+                        float affected = (bluetoothPlayback && bluetoothDryTest)
+                            ? original : process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
                         short processed = (short)(clamp(affected, -1, 1) * 32767);
                         pcmOut[i] = (short)(clamp(affected * master, -1, 1) * 32767);
                         chunk.putShort(recordRaw ? pcmIn[i] : processed);
