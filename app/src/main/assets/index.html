@@ -85,7 +85,9 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <div class="notice">⚠ Never feed PA speaker output into the interface. Use LINE-level signal. Enable MONITOR only after a low-volume soundcheck; turn interface direct monitoring OFF to avoid doubled vocals. Separate faders require 2-channel USB capture supported by your phone.</div></section>
 <section class="panel" id="bluetoothLive" style="display:none"><h2>🎧 PHONE MIC → BLUETOOTH LIVE</h2>
 <p class="help">Sing into your PHONE microphone, hear the processed DD-8 Naat voice in paired Bluetooth earbuds or Bluetooth speaker. Use Android Bluetooth settings to connect first. Output may have noticeable delay and acoustic feedback; use low volume.</p>
-<div class="toggle"><input id="fastLive" type="checkbox" checked/><span><strong>FAST LIVE MODE</strong> — lower app buffering (experimental; Bluetooth delay remains)</span></div>
+<div class="toggle"><input id="fastLive" type="checkbox" checked/><span><strong>FAST LIVE MODE</strong> — small app buffers; Bluetooth transmission still adds delay.</span></div>
+<div class="toggle"><input id="btDryTest" type="checkbox"/><span><strong>DRY VOICE LATENCY TEST</strong> — app effects OFF temporarily. Compare with wired soundcheck; Bluetooth itself is not zero-delay.</span></div>
+<p class="tiny">DRY TEST removes app echo/reverb/delay processing for the microphone. Switch OFF to restore your saved Naat effects. For truly live stage monitoring, connect the USB audio interface LINE OUT to your MEGA speaker by cable.</p>
 <div class="status" id="latencyStatus">Audio latency diagnostics appear after live monitoring starts. This is NOT total ear-to-voice latency.</div>
 <label>BLUETOOTH MEDIA OUTPUT</label><select id="btOutput"><option value="">Pair speaker/earbuds first</option></select>
 <div class="twocol"><button class="btn ghost" onclick="grantBluetooth()">ALLOW NEARBY DEVICES</button><button class="btn ghost" onclick="refreshOutputs()">↻ REFRESH OUTPUTS</button></div>
@@ -219,7 +221,14 @@ function refreshKnobs(){id('levelValue').textContent=id('level').value+'%';id('f
 ['level','fb','time','mode','gate','master','hallEnabled'].forEach(k=>id(k).addEventListener('input',refreshKnobs));
 id('presetSearch').addEventListener('input',renderPresetLibrary);
 id('presetFilter').addEventListener('change',renderPresetLibrary);
-id('noiseReduction').addEventListener('change',()=>{if(native&&native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);});
+id('noiseReduction').addEventListener('change',()=>{if(native&&native.noiseReduction)native.noiseReduction(currentCategory==='earbuds'&&id('btDryTest').checked?0:+id('noiseReduction').value);});
+id('btDryTest').addEventListener('change',()=>{
+ if(native&&native.bluetoothDryTest)native.bluetoothDryTest(id('btDryTest').checked);
+ if(native&&native.noiseReduction)native.noiseReduction(id('btDryTest').checked?0:+id('noiseReduction').value);
+ id('btRouteStatus').textContent=id('btDryTest').checked?
+ 'DRY SOUND CHECK active: app DSP bypassed; Bluetooth delay remains.':
+ 'Normal Naat effects restored. Transport delay remains.';
+});
 function onStageModeChange(){
  const stereo=id('stageMode').value==='stereo';
  id('stageModeHelp').textContent=stereo?
@@ -283,8 +292,11 @@ function startBluetoothLive(){
  id('device').value=[...id('device').options].some(o=>o.value===builtIn.id)?builtIn.id:id('device').value;
  id('monitor').checked=true;
  if(native.fastLive)native.fastLive(id('fastLive').checked);
- if(native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
- id('btRouteStatus').textContent='Starting mobile mic and Bluetooth media output…';
+ if(native.bluetoothDryTest)native.bluetoothDryTest(id('btDryTest').checked);
+ if(native.noiseReduction)native.noiseReduction(id('btDryTest').checked?0:+id('noiseReduction').value);
+ id('btRouteStatus').textContent=id('btDryTest').checked?
+   'DRY SOUND CHECK: all app FX bypassed. Bluetooth transport delay still applies.' :
+   'Starting mobile mic and Bluetooth media output…';
  native.startBluetoothLive(builtIn.id,selected);
 }
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
