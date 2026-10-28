@@ -239,6 +239,9 @@ public final class NativeAudioEngine {
                 return;
             }
         }
+        // USB/wired live needs small blocks even when the Bluetooth-only FAST LIVE checkbox is off.
+        // Bluetooth can request low app latency, but codec/device transport delay is not removable.
+        final boolean lowLatencyPath = doMonitor && (fastLiveMode || !bluetoothPlayback);
         if (bluetoothPlayback && !doMonitor) {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
@@ -294,7 +297,7 @@ public final class NativeAudioEngine {
                             .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mehfilMode ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO).build();
                         AudioRecord r = new AudioRecord.Builder().setAudioSource(src).setAudioFormat(f)
                             // Smaller native input buffer for Fast Live (no inflated 8192-byte default).
-                            .setBufferSizeInBytes(fastLiveMode && bluetoothPlayback
+                            .setBufferSizeInBytes(lowLatencyPath
                                 ? Math.max(minimum, mehfilMode ? 2048 : 1024)
                                 : Math.max(minimum * 2, 8192)).build();
                         if (r.getState() == AudioRecord.STATE_INITIALIZED) { candidate = r; workingRate = rate; break; }
@@ -345,9 +348,9 @@ public final class NativeAudioEngine {
             int trackMin = AudioTrack.getMinBufferSize(sampleRate, mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (trackMin <= 0) trackMin = 8192;
             // BT A2DP may internally buffer hundreds of milliseconds; this minimizes app-side buffering.
-            int trackBytes = fastLiveMode && bluetoothPlayback ? Math.max(trackMin, 2048)
+            int trackBytes = lowLatencyPath ? Math.max(trackMin, 2048)
                 : Math.max(trackMin * 2, 8192);
-            for (int attempt = 0; attempt < (fastLiveMode && bluetoothPlayback ? 2 : 1); attempt++) {
+            for (int attempt = 0; attempt < (lowLatencyPath ? 2 : 1); attempt++) {
                 AudioTrack.Builder trackBuilder = new AudioTrack.Builder()
                     .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -356,7 +359,7 @@ public final class NativeAudioEngine {
                         .setChannelMask(mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO).build())
                     .setTransferMode(AudioTrack.MODE_STREAM)
                     .setBufferSizeInBytes(trackBytes);
-                if (fastLiveMode && bluetoothPlayback && attempt == 0)
+                if (lowLatencyPath && attempt == 0)
                     trackBuilder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY);
                 try {
                     output = trackBuilder.build();
@@ -370,9 +373,12 @@ public final class NativeAudioEngine {
             }
             if (output == null || output.getState() != AudioTrack.STATE_INITIALIZED)
                 throw new IllegalStateException("Cannot open audio output.");
-            if (fastLiveMode && bluetoothPlayback) {
-                // Request the minimum supported stream buffer; Android may clamp this value.
-                int requestFrames = Math.max(256, trackMin / 2);
+            if (lowLatencyPath) {
+                // getMinBufferSize returns BYTES. Convert to PCM frames, accounting for stereo.
+                // Android may clamp requests to its hardware/route limits.
+                final int channels = mehfilMode ? 2 : 1;
+                final int minFrames = trackMin / (2 * channels);
+                final int requestFrames = Math.max(256, minFrames);
                 try { output.setBufferSizeInFrames(requestFrames); }
                 catch (Exception ignored) {}
             }
@@ -394,6 +400,11 @@ public final class NativeAudioEngine {
             emit("status", "MIC CONNECTED • " +
                 (mehfilMode ? "MEHFIL USB STEREO" : stageVocalOnly ? "MEHFIL USB MIC SOUNDCHECK" : bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
                 " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth microphone requested" : ""));
+            if (lowLatencyPath && !bluetoothPlayback) {
+                emit("latency", "WIRED LOW LATENCY requested • " + sampleRate + " Hz • " +
+                    (1000 * output.getBufferSizeInFrames() / sampleRate) +
+                    " ms app playback buffer • USB/interface delay not measured");
+            }
             if (bluetoothPlayback) {
                 emit("hint", "Bluetooth media output requested. Fast Live " + (fastLiveMode ? "ON" : "OFF") +
                     ". Bluetooth codec latency is outside app control; keep volume low.");
@@ -534,8 +545,9 @@ public final class NativeAudioEngine {
         return (float) Math.tanh(combined * 1.3);
     }
     private void processStream() {
-        // 256 samples = ~5.3 ms at 48 kHz in Fast Live, versus 1024 samples in standard mode.
-        final int chunkSamples = fastLiveMode && bluetoothPlayback && !mehfil ? 256 : 1024;
+        // 256 mono samples = ~5.3 ms at 48 kHz. Use small blocks for monitored USB/wired
+        // live audio as well as Fast Live Bluetooth; 1024 for non-live/legacy paths.
+        final int chunkSamples = monitor && (fastLiveMode || !bluetoothPlayback) ? 256 : 1024;
         short[] pcmIn = new short[chunkSamples], pcmOut = new short[chunkSamples];
         ByteBuffer chunk = ByteBuffer.allocate(chunkSamples * 2).order(ByteOrder.LITTLE_ENDIAN);
         int tick = 0;
