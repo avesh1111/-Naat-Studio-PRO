@@ -18,6 +18,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
+import android.os.Process;
 import android.provider.MediaStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -355,7 +356,11 @@ public final class NativeAudioEngine {
                 : Math.max(trackMin * 2, 8192);
             for (int attempt = 0; attempt < (lowLatencyPath ? 2 : 1); attempt++) {
                 AudioTrack.Builder trackBuilder = new AudioTrack.Builder()
-                    .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    // GAME is Android's time-sensitive playback usage. On some phones it
+                    // offers better Bluetooth scheduling than MEDIA, but A2DP transport
+                    // latency remains outside the app's control.
+                    .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(lowLatencyPath ? AudioAttributes.USAGE_GAME : AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                     .setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                         .setSampleRate(sampleRate)
@@ -548,6 +553,10 @@ public final class NativeAudioEngine {
         return (float) Math.tanh(combined * 1.3);
     }
     private void processStream() {
+        // Apply actual Android audio scheduling priority to the processing thread.
+        // Thread.MAX_PRIORITY alone is not equivalent to this Linux scheduling hint.
+        try { Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO); }
+        catch (Exception ignored) { }
         // 256 mono samples = ~5.3 ms at 48 kHz. Use small blocks for monitored USB/wired
         // live audio as well as Fast Live Bluetooth; 1024 for non-live/legacy paths.
         final int chunkSamples = monitor && (fastLiveMode || !bluetoothPlayback) ? 256 : 1024;
@@ -628,9 +637,16 @@ public final class NativeAudioEngine {
                     }
                 }
                 if (monitor) {
+                    // Non-blocking BT prioritizes fresh live audio over ever-growing
+                    // software backlogs. Short writes are counted (not silently hidden)
+                    // and measured against the device's playback queue.
                     int written = fastLiveMode && bluetoothPlayback
                         ? output.write(pcmOut, 0, valid, AudioTrack.WRITE_NON_BLOCKING)
                         : output.write(pcmOut, 0, valid, AudioTrack.WRITE_BLOCKING);
+                    if (written < 0) {
+                        emit("error", "Audio output write failed (" + written + "). Reconnect the speaker and restart Live.");
+                        break;
+                    }
                     if (written > 0) monitorFramesWritten += written / (mehfil ? 2 : 1);
                     if (fastLiveMode && bluetoothPlayback && written < valid) outputDrops++;
                     if (bluetoothPlayback && ++outputRouteCheck == (fastLiveMode ? 48 : 12)) {
