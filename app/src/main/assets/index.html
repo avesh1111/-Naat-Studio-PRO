@@ -86,12 +86,12 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <section class="panel" id="bluetoothLive" style="display:none"><h2>🎧 PHONE MIC → BLUETOOTH LIVE</h2>
 <p class="help">Sing into your PHONE microphone, hear the processed DD-8 Naat voice in paired Bluetooth earbuds or Bluetooth speaker. Use Android Bluetooth settings to connect first. Output may have noticeable delay and acoustic feedback; use low volume.</p>
 <div class="toggle"><input id="fastLive" type="checkbox" checked/><span><strong>FAST LIVE MODE</strong> — small app buffers; Bluetooth transmission still adds delay.</span></div>
-<div class="toggle"><input id="btDryTest" type="checkbox"/><span><strong>DRY VOICE LATENCY TEST</strong> — app effects OFF temporarily. Compare with wired soundcheck; Bluetooth itself is not zero-delay.</span></div>
-<p class="tiny">DRY TEST removes app echo/reverb/delay processing for the microphone. Switch OFF to restore your saved Naat effects. For truly live stage monitoring, connect the USB audio interface LINE OUT to your MEGA speaker by cable.</p>
+<div class="toggle"><input id="btDryTest" type="checkbox" checked/><span><strong>FAST DIRECT VOICE — RECOMMENDED</strong> — Phone mic straight to Bluetooth speaker, without app echo/reverb/delay.</span></div>
+<p class="tiny">ON: Direct, clean vocal with the least intentional app FX delay (your Naat presets stay saved). OFF: Hear selected Naat Echo/Reverb/Delay again. Both still have unavoidable Bluetooth hardware latency. Use low volume to avoid acoustic feedback.</p>
 <div class="status" id="latencyStatus">Audio latency diagnostics appear after live monitoring starts. This is NOT total ear-to-voice latency.</div>
 <label>BLUETOOTH MEDIA OUTPUT</label><select id="btOutput"><option value="">Pair speaker/earbuds first</option></select>
 <div class="twocol"><button class="btn ghost" onclick="grantBluetooth()">ALLOW NEARBY DEVICES</button><button class="btn ghost" onclick="refreshOutputs()">↻ REFRESH OUTPUTS</button></div>
-<div style="height:10px"></div><button class="btn" onclick="startBluetoothLive()" style="width:100%">▶ START LIVE PHONE MIC → BLUETOOTH</button>
+<div style="height:10px"></div><button class="btn" onclick="startBluetoothLive()" style="width:100%">▶ START FAST LIVE PHONE MIC → BLUETOOTH</button>
 <div class="status" id="btRouteStatus">READY • Connect Bluetooth media speaker or earbuds first.</div>
 </section>
 <section class="panel" id="channelPanel"><h2>01 / FIVE NAAT CHANNELS</h2><div id="presetBar" class="grid5"></div><p class="hint">Tap channel to load • Hold channel 2 seconds to SAVE • Tap name to rename</p><div class="row"><span class="chip" id="selectedName">CH1 — Har Waqt Tasavvur</span><span class="chip" id="savedNotice">AUTOSAVED PRESETS</span></div></section>
@@ -194,7 +194,7 @@ function openCategory(category){
  id('bluetoothLive').style.display=b?'block':'none';
  id('mehfilMixer').style.display=m?'block':'none';id('rawOption').style.display=m?'none':'flex';
  id('categoryBadge').textContent=m?'LIVE MEHFIL':b?'EARBUDS STUDIO':'MOBILE MIC STUDIO';
- id('categoryHelp').textContent=m?'USB INPUT 1: VOCAL + DD-8 • USB INPUT 2: CLEAN INSTRUMENTS • COMBINED RECORDING':b?'Speak into PHONE MIC and hear DD-8 effects LIVE on Bluetooth speaker / earbuds. Set media audio output. Bluetooth latency is unavoidable.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
+ id('categoryHelp').textContent=m?'USB INPUT 1: VOCAL + DD-8 • USB INPUT 2: CLEAN INSTRUMENTS • COMBINED RECORDING':b?'Speak into PHONE MIC and hear your voice LIVE on Bluetooth. Fast Direct Voice is ON by default to bypass app echo; Bluetooth speaker buffering cannot be removed.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
  id('recTitle').textContent=m?'04 / LIVE MEHFIL — COMBINED WAV RECORDER':b?'04 / EARBUDS NAAT WAV RECORDER':'04 / MOBILE NAAT WAV RECORDER';
  id('recordStatus').textContent=m?'READY • Two-channel USB input is required for combined recording.':'READY TO RECORD';
  id('monitor').checked=m||b;setMix();refreshDevices();if(b)refreshOutputs();if(m){onStageModeChange();refreshStageOutputs();}window.scrollTo(0,0);
@@ -226,8 +226,8 @@ id('btDryTest').addEventListener('change',()=>{
  if(native&&native.bluetoothDryTest)native.bluetoothDryTest(id('btDryTest').checked);
  if(native&&native.noiseReduction)native.noiseReduction(id('btDryTest').checked?0:+id('noiseReduction').value);
  id('btRouteStatus').textContent=id('btDryTest').checked?
- 'DRY SOUND CHECK active: app DSP bypassed; Bluetooth delay remains.':
- 'Normal Naat effects restored. Transport delay remains.';
+ 'FAST DIRECT VOICE ON: app FX bypassed. Bluetooth transport delay remains.':
+ 'NAAT FX ON: app delay/echo repeats restored. Bluetooth transport delay remains.';
 });
 function onStageModeChange(){
  const stereo=id('stageMode').value==='stereo';
@@ -295,8 +295,8 @@ function startBluetoothLive(){
  if(native.bluetoothDryTest)native.bluetoothDryTest(id('btDryTest').checked);
  if(native.noiseReduction)native.noiseReduction(id('btDryTest').checked?0:+id('noiseReduction').value);
  id('btRouteStatus').textContent=id('btDryTest').checked?
-   'DRY SOUND CHECK: all app FX bypassed. Bluetooth transport delay still applies.' :
-   'Starting mobile mic and Bluetooth media output…';
+   'FAST DIRECT VOICE: app FX bypassed. Bluetooth speaker delay still applies.' :
+   'NAAT FX: starting mobile mic with selected echo/delay preset…';
  native.startBluetoothLive(builtIn.id,selected);
 }
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
