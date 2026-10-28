@@ -44,7 +44,10 @@ public final class NativeAudioEngine {
     private AudioDeviceInfo requestedPlaybackDevice;
     private volatile boolean bluetoothPlayback = false;
     private volatile boolean fastLiveMode = false;
-    private volatile boolean bluetoothDryTest = false;
+    // Default Bluetooth live to a clean direct mic feed: the 380 ms DD-8 echo
+    // should never be confused with actual mic-to-speaker transport latency.
+    // Users can disable this in Bluetooth Studio to use their FX presets.
+    private volatile boolean bluetoothDryTest = true;
     private long monitorFramesWritten = 0;
     private long outputDrops = 0;
     private AutomaticGainControl agc;
@@ -414,6 +417,9 @@ public final class NativeAudioEngine {
                     " ms app playback buffer • USB/interface delay not measured");
             }
             if (bluetoothPlayback) {
+                emit("hint", bluetoothDryTest
+                    ? "FAST DIRECT VOICE: app echo, reverb and delay bypassed. Bluetooth speaker buffering remains."
+                    : "NAAT FX ON: selected echo/delay preset adds intentional repeats. Bluetooth speaker buffering remains.");
                 emit("hint", "Bluetooth media output requested. Fast Live " + (fastLiveMode ? "ON" : "OFF") +
                     ". Bluetooth codec latency is outside app control; keep volume low.");
                 emit("latency", "FAST LIVE " + (fastLiveMode ? "ON" : "OFF") +
@@ -649,6 +655,8 @@ public final class NativeAudioEngine {
                     }
                     if (written > 0) monitorFramesWritten += written / (mehfil ? 2 : 1);
                     if (fastLiveMode && bluetoothPlayback && written < valid) outputDrops++;
+                    // Non-blocking writes intentionally do not queue stale audio
+                    // when A2DP is congested. Android transport itself is opaque.
                     if (bluetoothPlayback && ++outputRouteCheck == (fastLiveMode ? 48 : 12)) {
                         AudioDeviceInfo active = output.getRoutedDevice();
                         if (active != null && !isBluetoothPlaybackType(active.getType())) {
