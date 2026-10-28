@@ -17,8 +17,8 @@ Daemon will be stopped at the end of the build
 > Task :app:parseDebugLocalResources
 > Task :app:processDebugManifest
 > Task :app:mergeDebugShaders
-> Task :app:compileDebugShaders NO-SOURCE
 > Task :app:processDebugManifestForPackage
+> Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
 > Task :app:mergeDebugAssets
 > Task :app:compressDebugAssets
@@ -46,7 +46,7 @@ Note: Recompile with -Xlint:deprecation for details.
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793200254702.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793200582078.json
 
-BUILD SUCCESSFUL in 19s
+BUILD SUCCESSFUL in 18s
 32 actionable tasks: 32 executed
