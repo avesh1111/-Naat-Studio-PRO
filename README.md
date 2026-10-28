@@ -36,6 +36,18 @@ The debug APK appears at `app/build/outputs/apk/debug/app-debug.apk` and can be 
 - Never use a loudspeaker close to a live microphone. Monitor OFF is selected by default.
 - Permissions: `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `BLUETOOTH_CONNECT`. No storage permission needed on Android 10+ for own MediaStore recordings.
 
+
+### Bluetooth Live quick start (Android)
+
+1. Pair a Bluetooth *media* speaker in Android Settings; do not use its microphone for this path.
+2. Open **EARBUDS STUDIO / Bluetooth Studio**; input is the **phone's built-in microphone**.
+3. Leave **FAST LIVE MODE** enabled and **FAST DIRECT VOICE** enabled for minimum app-added FX delay.
+4. Select the Bluetooth speaker, refresh output list and tap **START FAST LIVE PHONE MIC → BLUETOOTH**.
+5. For Naat echo presets uncheck **FAST DIRECT VOICE**. Echo repeats are intentional but can sound like latency.
+6. Start at low volume; keep the speaker facing away from the phone mic to prevent feedback.
+
+**Important:** App buffering is optimized, but Android/Bluetooth codec, device queue, and speaker introduce inherent latency. This is **not 0 ms** and has not been certified with real hardware. For tight live stage monitoring, use USB audio interface plus a wired PA output.
+
 ## Files
 
 - `app/src/main/java/com/naatstudio/nativepro/MainActivity.java`: Android permissions, packaged UI and JS bridge.
