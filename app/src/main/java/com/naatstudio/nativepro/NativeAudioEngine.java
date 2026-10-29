@@ -246,9 +246,11 @@ public final class NativeAudioEngine {
                 return;
             }
         }
-        // USB/wired live needs small blocks even when the Bluetooth-only FAST LIVE checkbox is off.
-        // Bluetooth can request low app latency, but codec/device transport delay is not removable.
-        final boolean lowLatencyPath = doMonitor && (fastLiveMode || !bluetoothPlayback);
+        // In Bluetooth Live ALWAYS choose the fastest app-owned path. The user must
+        // not accidentally reintroduce 1024-sample chunks by disabling a checkbox.
+        // This is an app-side optimization, NOT a 100 ms end-to-end guarantee.
+        if (bluetoothPlayback) fastLiveMode = true;
+        final boolean lowLatencyPath = doMonitor;
         if (bluetoothPlayback && !doMonitor) {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
@@ -565,7 +567,7 @@ public final class NativeAudioEngine {
         catch (Exception ignored) { }
         // 256 mono samples = ~5.3 ms at 48 kHz. Use small blocks for monitored USB/wired
         // live audio as well as Fast Live Bluetooth; 1024 for non-live/legacy paths.
-        final int chunkSamples = monitor && (fastLiveMode || !bluetoothPlayback) ? 256 : 1024;
+        final int chunkSamples = monitor ? 256 : 1024;
         short[] pcmIn = new short[chunkSamples], pcmOut = new short[chunkSamples];
         ByteBuffer chunk = ByteBuffer.allocate(chunkSamples * 2).order(ByteOrder.LITTLE_ENDIAN);
         int tick = 0;
@@ -646,7 +648,7 @@ public final class NativeAudioEngine {
                     // Non-blocking BT prioritizes fresh live audio over ever-growing
                     // software backlogs. Short writes are counted (not silently hidden)
                     // and measured against the device's playback queue.
-                    int written = fastLiveMode && bluetoothPlayback
+                    int written = bluetoothPlayback
                         ? output.write(pcmOut, 0, valid, AudioTrack.WRITE_NON_BLOCKING)
                         : output.write(pcmOut, 0, valid, AudioTrack.WRITE_BLOCKING);
                     if (written < 0) {
@@ -654,10 +656,11 @@ public final class NativeAudioEngine {
                         break;
                     }
                     if (written > 0) monitorFramesWritten += written / (mehfil ? 2 : 1);
-                    if (fastLiveMode && bluetoothPlayback && written < valid) outputDrops++;
+                    if (bluetoothPlayback && written < valid) outputDrops++;
                     // Non-blocking writes intentionally do not queue stale audio
                     // when A2DP is congested. Android transport itself is opaque.
-                    if (bluetoothPlayback && ++outputRouteCheck == (fastLiveMode ? 48 : 12)) {
+                    if (bluetoothPlayback && ++outputRouteCheck >= 48) {
+                        outputRouteCheck = 0;
                         AudioDeviceInfo active = output.getRoutedDevice();
                         if (active != null && !isBluetoothPlaybackType(active.getType())) {
                             monitor = false;
@@ -680,7 +683,7 @@ public final class NativeAudioEngine {
                 tick += valid;
                 if (bluetoothPlayback && monitor) {
                     liveDiagFrames += valid / (mehfil ? 2 : 1);
-                    if (liveDiagFrames >= sampleRate * 2L) {
+                    if (liveDiagFrames >= sampleRate) {
                         liveDiagFrames = 0;
                         // Playback-head queue is only an app-side estimate, NOT mic-to-ear latency.
                         long playHead = Integer.toUnsignedLong(output.getPlaybackHeadPosition());
@@ -688,10 +691,11 @@ public final class NativeAudioEngine {
                         long appQueueMs = Math.min(60000, queuedFrames * 1000L / sampleRate);
                         AudioDeviceInfo routed = output.getRoutedDevice();
                         String routedName = routed == null ? "route unknown" : routed.getProductName().toString();
-                        emit("latency", "App audio queue ~" + appQueueMs + " ms • " +
+                        emit("latency", "APP queue estimate " + appQueueMs + " ms (target ≤100 ms) • " +
+                            (appQueueMs > 100 ? "APP QUEUE ABOVE TARGET • " : "") +
                             "underruns " + output.getUnderrunCount() + " • dropped chunks " +
                             outputDrops + " • " + routedName +
-                            " • Bluetooth transport delay NOT included");
+                            " • speaker/Bluetooth transmission NOT measured (total delay unknown)");
                     }
                 }
                 if (tick > sampleRate / 8 * (mehfil ? 2 : 1)) {
