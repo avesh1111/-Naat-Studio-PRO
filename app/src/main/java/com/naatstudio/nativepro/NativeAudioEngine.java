@@ -10,6 +10,9 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
+import android.media.AudioRouting;
+import android.os.Handler;
+import android.os.Looper;
 import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
@@ -41,6 +44,9 @@ public final class NativeAudioEngine {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private AudioRecord input;
     private AudioTrack output;
+    private AudioRouting.OnRoutingChangedListener outputRoutingListener;
+    private volatile String outputRouteName = "not confirmed";
+    private int requestedLowLatencyFrames = 0;
     private AudioDeviceInfo requestedPlaybackDevice;
     private volatile boolean bluetoothPlayback = false;
     private volatile boolean fastLiveMode = false;
@@ -112,10 +118,11 @@ public final class NativeAudioEngine {
     void setFastLiveMode(boolean enabled) { fastLiveMode = enabled; }
     // Direct PCM soundcheck bypasses app DSP; Android/Bluetooth transport delay still exists.
     void setBluetoothDryTest(boolean enabled) { bluetoothDryTest = enabled; }
+    boolean isRunning() { return running.get(); }
 
     synchronized void setNoiseReduction(int strength) {
         noiseStrength = (int)clamp(strength, 0, 3);
-        boolean enablePlatform = noiseStrength > 0 && !mehfil;
+        boolean enablePlatform = noiseStrength > 0 && !mehfil && !(bluetoothPlayback && bluetoothDryTest);
         try {
             if (ns != null) {
                 ns.setEnabled(enablePlatform);
@@ -228,6 +235,8 @@ public final class NativeAudioEngine {
         selectedInputDevice = null;
         requestedPlaybackDevice = null;
         bluetoothPlayback = false;
+        outputRouteName = "not confirmed";
+        requestedLowLatencyFrames = 0;
         if (requestedOutput != null && !requestedOutput.equals("default")) {
             try {
                 for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
@@ -251,6 +260,7 @@ public final class NativeAudioEngine {
         // This is an app-side optimization, NOT a 100 ms end-to-end guarantee.
         if (bluetoothPlayback) fastLiveMode = true;
         final boolean lowLatencyPath = doMonitor;
+        final boolean btDry = bluetoothPlayback && bluetoothDryTest;
         if (bluetoothPlayback && !doMonitor) {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
@@ -260,6 +270,15 @@ public final class NativeAudioEngine {
         }
         boolean chosenBluetooth = false;
         AudioDeviceInfo chosen = null;
+        if (bluetoothPlayback && (requestedDevice == null || "default".equals(requestedDevice))) {
+            for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC) { chosen = d; break; }
+            }
+            if (chosen == null) {
+                emit("error", "Built-in phone microphone not found; check microphone permission.");
+                return;
+            }
+        }
         if (requestedDevice != null && !"default".equals(requestedDevice)) {
             try {
                 for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
@@ -296,9 +315,11 @@ public final class NativeAudioEngine {
             AudioRecord candidate = null;
             int workingRate = 48000;
             for (int rate : new int[]{48000, 44100}) {
-                for (int src : noiseStrength > 0 && !mehfil
-                    ? new int[]{MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.UNPROCESSED}
-                    : new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION}) {
+                for (int src : btDry
+                    ? new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC}
+                    : noiseStrength > 0 && !mehfil
+                        ? new int[]{MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.UNPROCESSED}
+                        : new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION}) {
                     try {
                         int minimum = AudioRecord.getMinBufferSize(rate, mehfilMode ? AudioFormat.CHANNEL_IN_STEREO : AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
                         if (minimum <= 0) continue;
@@ -325,22 +346,23 @@ public final class NativeAudioEngine {
                 if (chosen == null || chosen.getType() != AudioDeviceInfo.TYPE_BUILTIN_MIC)
                     throw new IllegalStateException("Bluetooth Live needs the phone's built-in microphone. Select Phone mic.");
             }
-            // Best effort: disable built-in AGC / echo cancellation / noise suppression.
-            int sessionId = input.getAudioSessionId();
-            try { if (AutomaticGainControl.isAvailable()) { agc = AutomaticGainControl.create(sessionId); if (agc != null) agc.setEnabled(false); } } catch (Exception ignored) {}
-            try { if (AcousticEchoCanceler.isAvailable()) { aec = AcousticEchoCanceler.create(sessionId); if (aec != null) aec.setEnabled(false); } } catch (Exception ignored) {}
-            try {
-                platformNoiseActive = false;
-                // Native NS operates on the whole capture session. Keep it OFF for Live Mehfil
-                // so clean instrument channel 2 never receives the vocal noise processing.
-                if (!mehfil && NoiseSuppressor.isAvailable()) {
-                    ns = NoiseSuppressor.create(sessionId);
-                    if (ns != null) {
-                        ns.setEnabled(noiseStrength > 0);
-                        platformNoiseActive = ns.getEnabled();
+            // The direct Bluetooth path must not even attach AGC, AEC or NS.
+            // UNPROCESSED is best-effort; Android hardware may still impose preprocessing.
+            platformNoiseActive = false;
+            if (!btDry) {
+                int sessionId = input.getAudioSessionId();
+                try { if (AutomaticGainControl.isAvailable()) { agc = AutomaticGainControl.create(sessionId); if (agc != null) agc.setEnabled(false); } } catch (Exception ignored) {}
+                try { if (AcousticEchoCanceler.isAvailable()) { aec = AcousticEchoCanceler.create(sessionId); if (aec != null) aec.setEnabled(false); } } catch (Exception ignored) {}
+                try {
+                    if (!mehfil && NoiseSuppressor.isAvailable()) {
+                        ns = NoiseSuppressor.create(sessionId);
+                        if (ns != null) {
+                            ns.setEnabled(noiseStrength > 0);
+                            platformNoiseActive = ns.getEnabled();
+                        }
                     }
-                }
-            } catch (Exception ignored) { platformNoiseActive = false; }
+                } catch (Exception ignored) { platformNoiseActive = false; }
+            }
             emit("noise", "Vocal Noise Reduction " +
                 (noiseStrength == 0 ? "OFF" : noiseStrength == 1 ? "LIGHT" :
                 noiseStrength == 2 ? "BALANCED" : "STRONG") + " • " +
@@ -357,7 +379,10 @@ public final class NativeAudioEngine {
             int trackMin = AudioTrack.getMinBufferSize(sampleRate, mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (trackMin <= 0) trackMin = 8192;
             // BT A2DP may internally buffer hundreds of milliseconds; this minimizes app-side buffering.
-            int trackBytes = lowLatencyPath ? Math.max(trackMin, 2048)
+            // Two minimum buffers for Bluetooth to avoid non-blocking starvation.
+            // The accepted size is read back after the preferred route is selected.
+            int trackBytes = bluetoothPlayback ? Math.max(trackMin * 2, 4096)
+                : lowLatencyPath ? Math.max(trackMin, 2048)
                 : Math.max(trackMin * 2, 8192);
             for (int attempt = 0; attempt < (lowLatencyPath ? 2 : 1); attempt++) {
                 AudioTrack.Builder trackBuilder = new AudioTrack.Builder()
@@ -386,19 +411,45 @@ public final class NativeAudioEngine {
             }
             if (output == null || output.getState() != AudioTrack.STATE_INITIALIZED)
                 throw new IllegalStateException("Cannot open audio output.");
-            if (lowLatencyPath) {
-                // getMinBufferSize returns BYTES. Convert to PCM frames, accounting for stereo.
-                // Android may clamp requests to its hardware/route limits.
-                final int channels = mehfilMode ? 2 : 1;
-                final int minFrames = trackMin / (2 * channels);
-                final int requestFrames = Math.max(256, minFrames);
-                try { output.setBufferSizeInFrames(requestFrames); }
-                catch (Exception ignored) {}
-            }
             monitorFramesWritten = 0;
             outputDrops = 0;
             if (requestedPlaybackDevice != null && !output.setPreferredDevice(requestedPlaybackDevice))
                 throw new IllegalStateException("Android rejected selected output. Reconnect Bluetooth media audio.");
+            // Route first, then request frame capacity. Android may clamp or reconfigure.
+            final int channels = mehfilMode ? 2 : 1;
+            final int minFrames = Math.max(1, trackMin / (2 * channels));
+            requestedLowLatencyFrames = lowLatencyPath
+                ? Math.max(256, bluetoothPlayback ? minFrames * 2 : minFrames) : 0;
+            if (requestedLowLatencyFrames > 0) {
+                try { output.setBufferSizeInFrames(requestedLowLatencyFrames); }
+                catch (Exception ignored) {}
+            }
+            if (doMonitor) {
+                outputRoutingListener = router -> {
+                    AudioTrack track = (AudioTrack) router;
+                    if (track != output || !running.get()) return;
+                    AudioDeviceInfo device = track.getRoutedDevice();
+                    if (device == null) return;
+                    outputRouteName = device.getProductName().toString();
+                    if (requestedLowLatencyFrames > 0) {
+                        try { track.setBufferSizeInFrames(requestedLowLatencyFrames); }
+                        catch (Exception ignored) {}
+                    }
+                    emit("latency", "Output route: " + outputRouteName +
+                        " • accepted app buffer " + track.getBufferSizeInFrames() +
+                        " frames (" + (track.getBufferSizeInFrames() * 1000L / sampleRate) +
+                        " ms) • Bluetooth transport delay not included");
+                    if (bluetoothPlayback && !isBluetoothPlaybackType(device.getType())) {
+                        monitor = false;
+                        try { track.pause(); } catch (Exception ignored) {}
+                        emit("error", "Output changed away from Bluetooth: " + outputRouteName +
+                            ". Monitoring stopped for feedback safety.");
+                    } else {
+                        emit("route", "OUTPUT ACTIVE • " + outputRouteName);
+                    }
+                };
+                output.addOnRoutingChangedListener(outputRoutingListener, new Handler(Looper.getMainLooper()));
+            }
             initDSP();
             monitor = doMonitor;
             input.startRecording();
@@ -572,7 +623,6 @@ public final class NativeAudioEngine {
         ByteBuffer chunk = ByteBuffer.allocate(chunkSamples * 2).order(ByteOrder.LITTLE_ENDIAN);
         int tick = 0;
         long liveDiagFrames = 0;
-        int outputRouteCheck = 0;
         int stageRouteFrames = 0;
         boolean stageInputVerified = false;
         boolean stageOutputVerified = false;
@@ -657,22 +707,8 @@ public final class NativeAudioEngine {
                     }
                     if (written > 0) monitorFramesWritten += written / (mehfil ? 2 : 1);
                     if (bluetoothPlayback && written < valid) outputDrops++;
-                    // Non-blocking writes intentionally do not queue stale audio
-                    // when A2DP is congested. Android transport itself is opaque.
-                    if (bluetoothPlayback && ++outputRouteCheck >= 48) {
-                        outputRouteCheck = 0;
-                        AudioDeviceInfo active = output.getRoutedDevice();
-                        if (active != null && !isBluetoothPlaybackType(active.getType())) {
-                            monitor = false;
-                            try { output.pause(); } catch (Exception ignored) {}
-                            emit("error", "Sound was routed to " + active.getProductName() +
-                                " instead of Bluetooth. Playback stopped to avoid speaker feedback. Reconnect Bluetooth media output.");
-                        } else if (active != null) {
-                            emit("route", "BLUETOOTH OUTPUT ACTIVE • " + active.getProductName());
-                        } else {
-                            emit("hint", "Bluetooth output route not yet confirmed; verify playback on earbuds/speaker at low volume.");
-                        }
-                    }
+                    // Output routing changes are handled via AudioRouting listener,
+                    // never by Binder calls on this audio processing thread.
                 }
                 synchronized (recordLock) {
                     if (wavOut != null) {
@@ -689,8 +725,7 @@ public final class NativeAudioEngine {
                         long playHead = Integer.toUnsignedLong(output.getPlaybackHeadPosition());
                         long queuedFrames = Math.max(0, monitorFramesWritten - playHead);
                         long appQueueMs = Math.min(60000, queuedFrames * 1000L / sampleRate);
-                        AudioDeviceInfo routed = output.getRoutedDevice();
-                        String routedName = routed == null ? "route unknown" : routed.getProductName().toString();
+                        String routedName = outputRouteName;
                         emit("latency", "APP queue estimate " + appQueueMs + " ms (target ≤100 ms) • " +
                             (appQueueMs > 100 ? "APP QUEUE ABOVE TARGET • " : "") +
                             "underruns " + output.getUnderrunCount() + " • dropped chunks " +
@@ -713,14 +748,25 @@ public final class NativeAudioEngine {
         running.set(false);
         if (input != null) { try { input.stop(); } catch (Exception ignored) {} }
         if (worker != null && worker != Thread.currentThread()) {
-            try { worker.join(600); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            try { worker.join(1500); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            if (worker.isAlive()) {
+                emit("error", "Audio worker still closing; microphone resources retained to avoid a concurrent release. Retry STOP.");
+                return;
+            }
         }
         worker = null;
         if (input != null) { input.release(); input = null; }
         if (agc != null) { agc.release(); agc = null; }
         if (aec != null) { aec.release(); aec = null; }
         if (ns != null) { ns.release(); ns = null; }
-        if (output != null) { try { output.pause(); output.flush(); } catch (Exception ignored) {} output.release(); output = null; }
+        if (output != null) {
+            if (outputRoutingListener != null) {
+                try { output.removeOnRoutingChangedListener(outputRoutingListener); } catch (Exception ignored) {}
+                outputRoutingListener = null;
+            }
+            try { output.pause(); output.flush(); } catch (Exception ignored) {}
+            output.release(); output = null;
+        }
         requestedPlaybackDevice = null;
         selectedInputDevice = null;
         stageVocalOnly = false;
