@@ -110,6 +110,8 @@ public class MainActivity extends Activity {
             requestedMehfil = false;
             requestedStageMono = false;
             requestedBluetooth = true;
+            // Bluetooth Live must always use the short-buffer real-time path.
+            engine.setFastLiveMode(true);
             runOnUiThread(MainActivity.this::startRequested);
         }
         @JavascriptInterface public void hall(boolean enabled) { engine.setHallEnabled(enabled); }
