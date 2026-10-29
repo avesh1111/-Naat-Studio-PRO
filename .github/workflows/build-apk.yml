@@ -10,6 +10,16 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # Export the exact repository sources so the user can share an Android Studio
+      # project without decompiling an APK or installing network tools.
+      - name: Package Android Studio source ZIP
+        run: git archive --format=zip --output=/tmp/NaatStudioPRO-AndroidStudio-source.zip HEAD
+      - name: Upload editable source project
+        uses: actions/upload-artifact@v4
+        with:
+          name: NaatStudioPRO-AndroidStudio-source
+          path: /tmp/NaatStudioPRO-AndroidStudio-source.zip
+          if-no-files-found: error
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
