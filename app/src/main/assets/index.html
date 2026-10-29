@@ -85,10 +85,10 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <div class="notice">⚠ Never feed PA speaker output into the interface. Use LINE-level signal. Enable MONITOR only after a low-volume soundcheck; turn interface direct monitoring OFF to avoid doubled vocals. Separate faders require 2-channel USB capture supported by your phone.</div></section>
 <section class="panel" id="bluetoothLive" style="display:none"><h2>🎧 PHONE MIC → BLUETOOTH LIVE</h2>
 <p class="help">Sing into your PHONE microphone, hear the processed DD-8 Naat voice in paired Bluetooth earbuds or Bluetooth speaker. Use Android Bluetooth settings to connect first. Output may have noticeable delay and acoustic feedback; use low volume.</p>
-<div class="toggle"><input id="fastLive" type="checkbox" checked/><span><strong>FAST LIVE MODE</strong> — small app buffers; Bluetooth transmission still adds delay.</span></div>
+<div class="toggle"><input id="fastLive" type="checkbox" checked disabled/><span><strong>FAST LIVE • ALWAYS ON</strong> — 100 ms APP queue target (not a measured speaker delay). Small audio chunks and fast scheduling are enabled automatically.</span></div>
 <div class="toggle"><input id="btDryTest" type="checkbox" checked/><span><strong>FAST DIRECT VOICE — RECOMMENDED</strong> — Phone mic straight to Bluetooth speaker, without app echo/reverb/delay.</span></div>
 <p class="tiny">ON: Direct, clean vocal with the least intentional app FX delay (your Naat presets stay saved). OFF: Hear selected Naat Echo/Reverb/Delay again. Both still have unavoidable Bluetooth hardware latency. Use low volume to avoid acoustic feedback.</p>
-<div class="status" id="latencyStatus">Audio latency diagnostics appear after live monitoring starts. This is NOT total ear-to-voice latency.</div>
+<div class="status" id="latencyStatus">Target: app playback queue ≤100 ms. Live diagnostics appear after START. This excludes Bluetooth codec, transmission and speaker buffering, so the total microphone-to-speaker delay can be higher.</div>
 <label>BLUETOOTH MEDIA OUTPUT</label><select id="btOutput"><option value="">Pair speaker/earbuds first</option></select>
 <div class="twocol"><button class="btn ghost" onclick="grantBluetooth()">ALLOW NEARBY DEVICES</button><button class="btn ghost" onclick="refreshOutputs()">↻ REFRESH OUTPUTS</button></div>
 <div style="height:10px"></div><button class="btn" onclick="startBluetoothLive()" style="width:100%">▶ START FAST LIVE PHONE MIC → BLUETOOTH</button>
@@ -291,7 +291,7 @@ function startBluetoothLive(){
  if(!builtIn){id('btRouteStatus').textContent='Built-in phone mic not detected. Enable Microphone permission.';return;}
  id('device').value=[...id('device').options].some(o=>o.value===builtIn.id)?builtIn.id:id('device').value;
  id('monitor').checked=true;
- if(native.fastLive)native.fastLive(id('fastLive').checked);
+ if(native.fastLive)native.fastLive(true);
  if(native.bluetoothDryTest)native.bluetoothDryTest(id('btDryTest').checked);
  if(native.noiseReduction)native.noiseReduction(id('btDryTest').checked?0:+id('noiseReduction').value);
  id('btRouteStatus').textContent=id('btDryTest').checked?
