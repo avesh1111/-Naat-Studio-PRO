@@ -290,7 +290,7 @@ public final class NativeAudioEngine {
         if (bluetoothPlayback) fastLiveMode = true;
         final boolean lowLatencyPath = doMonitor;
         final boolean btDry = bluetoothPlayback && bluetoothDryTest;
-        final boolean wiredStage = (mehfilMode || stageVocalOnly) && doMonitor;
+        final boolean wiredLive = doMonitor && !bluetoothPlayback;
         if (bluetoothPlayback && !doMonitor) {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
@@ -382,7 +382,7 @@ public final class NativeAudioEngine {
             // The direct Bluetooth path must not even attach AGC, AEC or NS.
             // UNPROCESSED is best-effort; Android hardware may still impose preprocessing.
             platformNoiseActive = false;
-            if (!btDry && !wiredStage) {
+            if (!btDry && !wiredLive) {
                 int sessionId = input.getAudioSessionId();
                 try { if (AutomaticGainControl.isAvailable()) { agc = AutomaticGainControl.create(sessionId); if (agc != null) agc.setEnabled(false); } } catch (Exception ignored) {}
                 try { if (AcousticEchoCanceler.isAvailable()) { aec = AcousticEchoCanceler.create(sessionId); if (aec != null) aec.setEnabled(false); } } catch (Exception ignored) {}
@@ -396,13 +396,13 @@ public final class NativeAudioEngine {
                     }
                 } catch (Exception ignored) { platformNoiseActive = false; }
             }
-            if (wiredStage)
+            if (wiredLive)
                 emit("hint", "FAST WIRED CAPTURE: requested raw/unprocessed USB mic; Android platform AGC/AEC/NS omitted. Vocal software gate remains available in FX mode.");
             emit("noise", "Vocal Noise Reduction " +
                 (noiseStrength == 0 ? "OFF" : noiseStrength == 1 ? "LIGHT" :
                 noiseStrength == 2 ? "BALANCED" : "STRONG") + " • " +
                 (platformNoiseActive ? "Android NS ACTIVE + voice expander" :
-                    wiredStage ? "FAST WIRED: Android effects bypassed; software expander in FX mode"
+                    wiredLive ? "FAST WIRED: Android effects bypassed; software expander in FX mode"
                     : "vocal-only expander; Android NS not active") +
                 (mehfil ? " • instruments remain clean" : ""));
             if (chosen != null) {
@@ -727,7 +727,7 @@ public final class NativeAudioEngine {
                         // An honest dry test: skip ALL app effects to isolate transport latency.
                         // Do not claim this makes Bluetooth A2DP instantaneous.
                         float affected = ((bluetoothPlayback && bluetoothDryTest) ||
-                                (!bluetoothPlayback && wiredDryTest && monitor && (mehfil || stageVocalOnly)))
+                                (!bluetoothPlayback && wiredDryTest && monitor))
                             ? original * (stageVocalOnly ? (float)vocalVolume : 1f)
                             : process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
                         short processed = (short)(clamp(affected, -1, 1) * 32767);
