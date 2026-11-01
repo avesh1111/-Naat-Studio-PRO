@@ -11,23 +11,22 @@ Daemon will be stopped at the end of the build
 > Task :app:generateDebugResources
 > Task :app:createDebugCompatibleScreenManifests
 > Task :app:extractDeepLinksDebug
-> Task :app:processDebugMainManifest
 > Task :app:mergeDebugResources
-> Task :app:processDebugManifest
+> Task :app:processDebugMainManifest
 > Task :app:packageDebugResources
-> Task :app:processDebugManifestForPackage
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugManifest
 > Task :app:mergeDebugShaders
+> Task :app:processDebugManifestForPackage
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
-> Task :app:parseDebugLocalResources
 > Task :app:mergeDebugAssets
 > Task :app:compressDebugAssets
 > Task :app:desugarDebugFileDependencies
 > Task :app:processDebugJavaRes NO-SOURCE
 > Task :app:mergeDebugJavaResource
-> Task :app:checkDebugDuplicateClasses
 > Task :app:processDebugResources
-> Task :app:mergeExtDexDebug
+> Task :app:checkDebugDuplicateClasses
 
 > Task :app:compileDebugJavaWithJavac
 Note: Some input files use or override a deprecated API.
@@ -35,6 +34,7 @@ Note: Recompile with -Xlint:deprecation for details.
 
 > Task :app:dexBuilderDebug
 > Task :app:mergeDebugGlobalSynthetics
+> Task :app:mergeExtDexDebug
 > Task :app:mergeLibDexDebug
 > Task :app:mergeDebugJniLibFolders
 > Task :app:mergeDebugNativeLibs NO-SOURCE
@@ -46,7 +46,7 @@ Note: Recompile with -Xlint:deprecation for details.
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793535076622.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793535110743.json
 
-BUILD SUCCESSFUL in 15s
+BUILD SUCCESSFUL in 21s
 32 actionable tasks: 32 executed
