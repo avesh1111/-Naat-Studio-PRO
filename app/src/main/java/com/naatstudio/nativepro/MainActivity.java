@@ -10,6 +10,11 @@ import android.os.IBinder;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.media.AudioManager;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.os.Handler;
+import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -24,6 +29,12 @@ public class MainActivity extends Activity {
     private NativeAudioEngine engine;
     private LiveAudioService liveService;
     private boolean serviceBound = false;
+    // USB/headset devices can appear AFTER the UI loads. Keep Android's real
+    // device selections updated on hot-plug rather than requiring manual refresh.
+    private final AudioDeviceCallback deviceListener = new AudioDeviceCallback() {
+        @Override public void onAudioDevicesAdded(AudioDeviceInfo[] added) { refreshUiAudioDevices(); }
+        @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) { refreshUiAudioDevices(); }
+    };
     private boolean pendingServiceStart = false;
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
@@ -47,7 +58,8 @@ public class MainActivity extends Activity {
     private void refreshUiAudioDevices() {
         if (web == null || engine == null) return;
         web.evaluateJavascript(
-            "if (typeof refreshDevices === 'function' && document.getElementById('device')) {" +
+            "if (typeof refreshDevices === 'function' && document.getElementById('device') &&" +
+            "    (typeof isRunning === 'undefined' || !isRunning)) {" +
             "refreshDevices();" +
             "if (typeof refreshStageOutputs === 'function' && document.getElementById('stageOutput')) refreshStageOutputs();" +
             "}", null);
@@ -63,6 +75,8 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
+        AudioManager devices = getSystemService(AudioManager.class);
+        if (devices != null) devices.registerAudioDeviceCallback(deviceListener, new Handler(Looper.getMainLooper()));
         getWindow().setStatusBarColor(0xff080c12);
         getWindow().setNavigationBarColor(0xff080c12);
         bindAudioService();
@@ -131,6 +145,8 @@ public class MainActivity extends Activity {
         }
     }
     @Override protected void onDestroy() {
+        AudioManager devices = getSystemService(AudioManager.class);
+        if (devices != null) devices.unregisterAudioDeviceCallback(deviceListener);
         if (liveService != null) liveService.clearUiListener();
         if (serviceBound) { unbindService(connection); serviceBound = false; }
         engine = null;
