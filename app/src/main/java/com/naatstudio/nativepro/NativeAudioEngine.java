@@ -534,6 +534,29 @@ public final class NativeAudioEngine {
             worker = new Thread(this::processStream, "NaatStudioAudioEngine");
             worker.setPriority(Thread.MAX_PRIORITY);
             worker.start();
+            // Report actual Android routes after startup; preferred routes are only requests.
+            // Never claim USB is connected solely because a device was selected in the UI.
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (!running.get()) return;
+                AudioRecord activeInput = input;
+                AudioTrack activeOutput = output;
+                AudioDeviceInfo actualInput = activeInput == null ? null : activeInput.getRoutedDevice();
+                AudioDeviceInfo actualOutput = !monitor || activeOutput == null ? null : activeOutput.getRoutedDevice();
+                String inputName = actualInput == null ? "not confirmed" : actualInput.getProductName().toString();
+                String outputName = !monitor ? "monitoring OFF" :
+                    actualOutput == null ? "not confirmed" : actualOutput.getProductName().toString();
+                emit("route", "ACTUAL INPUT: " + inputName + " • ACTUAL OUTPUT: " + outputName);
+                if (selectedInputDevice != null && actualInput != null &&
+                    selectedInputDevice.getId() != actualInput.getId())
+                    emit("error", "Selected mic is NOT active. Android is recording from " + inputName +
+                        ". Check USB connection and select the correct input.");
+                if (requestedPlaybackDevice != null && actualOutput != null &&
+                    requestedPlaybackDevice.getId() != actualOutput.getId()) {
+                    emit("error", "Selected output is NOT active. Android is playing through " + outputName +
+                        ". Monitoring stopped for feedback safety.");
+                    stop();
+                }
+            }, 700);
             emit("status", "MIC CONNECTED • " +
                 (mehfilMode ? "MEHFIL USB STEREO" :
                  stageVocalOnly ? (doMonitor ? "MEHFIL WIRED SOUND CHECK" : "MEHFIL REHEARSAL • SPEAKER OFF") :
