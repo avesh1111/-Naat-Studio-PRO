@@ -251,7 +251,7 @@ public final class NativeAudioEngine {
         requestedLowLatencyFrames = 0;
         // Live stage monitoring must never silently fall back to phone speaker.
         // The user needs a physical LINE/wired route to the mixer/PA.
-        if (mehfilMode || stageVocalOnly) {
+        if ((mehfilMode || stageVocalOnly) && doMonitor) {
             if (requestedOutput == null || "default".equals(requestedOutput)) {
                 emit("error", "LIVE MEHFIL OUTPUT MISSING: connect/select USB audio interface LINE OUT or wired mixer output and tap REFRESH.");
                 return;
@@ -297,7 +297,8 @@ public final class NativeAudioEngine {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
         }
-        if ((mehfilMode || stageVocalOnly) && (requestedDevice == null || "default".equals(requestedDevice))) {
+        if ((mehfilMode || stageVocalOnly) && doMonitor &&
+            (requestedDevice == null || "default".equals(requestedDevice))) {
             emit("error", "LIVE MEHFIL MIC INPUT MISSING: choose connected USB mic, compatible 3.5mm headset mic, or built-in phone mic soundcheck; then REFRESH.");
             return;
         }
@@ -310,6 +311,22 @@ public final class NativeAudioEngine {
             if (chosen == null) {
                 emit("error", "Built-in phone microphone not found; check microphone permission.");
                 return;
+            }
+        }
+        if (stageVocalOnly && !doMonitor &&
+            (requestedDevice == null || "default".equals(requestedDevice))) {
+            // Rehearsal records without an audio output. Prefer actual built-in
+            // mic when Android makes its device ID available.
+            for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC) {
+                    chosen = d;
+                    selectedInputDevice = d;
+                    emit("hint", "REHEARSAL: built-in phone microphone selected. No audio is sent to any speaker.");
+                    break;
+                }
+            }
+            if (chosen == null) {
+                emit("hint", "REHEARSAL: using Android default microphone (actual hardware input not confirmed). No speaker monitoring.");
             }
         }
         if (requestedDevice != null && !"default".equals(requestedDevice)) {
@@ -424,6 +441,10 @@ public final class NativeAudioEngine {
                     emit("hint", "Android did not accept preferred mic routing. Recording source may differ.");
                 }
             }
+            // Capture-only mode: do NOT create an AudioTrack or start playback.
+            // This lets a user rehearse/record with the phone mic and no PA
+            // output without accidentally feeding the phone loudspeaker.
+            if (doMonitor) {
             int trackMin = AudioTrack.getMinBufferSize(sampleRate, mehfilMode ? AudioFormat.CHANNEL_OUT_STEREO : AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (trackMin <= 0) trackMin = 8192;
             // BT A2DP may internally buffer hundreds of milliseconds; this minimizes app-side buffering.
@@ -498,6 +519,7 @@ public final class NativeAudioEngine {
                 };
                 output.addOnRoutingChangedListener(outputRoutingListener, new Handler(Looper.getMainLooper()));
             }
+            } // End of optional audio playback track creation.
             initDSP();
             monitor = doMonitor;
             input.startRecording();
@@ -511,9 +533,11 @@ public final class NativeAudioEngine {
             worker.start();
             emit("status", "MIC CONNECTED • " +
                 (mehfilMode ? "MEHFIL USB STEREO" :
-                 stageVocalOnly ? "MEHFIL WIRED SOUND CHECK" :
+                 stageVocalOnly ? (doMonitor ? "MEHFIL WIRED SOUND CHECK" : "MEHFIL REHEARSAL • SPEAKER OFF") :
                  bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
                 " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth microphone requested" : ""));
+            if (stageVocalOnly && !doMonitor)
+                emit("stage", "REHEARSAL MIC ACTIVE • Speaker output DISABLED. Tap START RECORDING to save WAV.");
             if (lowLatencyPath && !bluetoothPlayback) {
                 emit("latency", "FAST WIRED • " + sampleRate + " Hz • " +
                     (1000 * output.getBufferSizeInFrames() / sampleRate) +
