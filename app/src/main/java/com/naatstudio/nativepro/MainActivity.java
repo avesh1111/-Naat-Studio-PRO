@@ -31,6 +31,9 @@ public class MainActivity extends Activity {
             engine = liveService.getEngine();
             liveService.setUiListener((kind, value) -> postEvent(kind, value));
             serviceBound = true;
+            // The WebView may have loaded while the foreground audio service was
+            // still binding. Re-populate USB mic/output lists as soon as it is ready.
+            refreshUiAudioDevices();
             if (pendingServiceStart) { pendingServiceStart = false; startRequested(); }
         }
         @Override public void onServiceDisconnected(ComponentName name) {
@@ -40,6 +43,14 @@ public class MainActivity extends Activity {
     };
     private void bindAudioService() {
         if (!serviceBound) bindService(new Intent(this, LiveAudioService.class), connection, Context.BIND_AUTO_CREATE);
+    }
+    private void refreshUiAudioDevices() {
+        if (web == null || engine == null) return;
+        web.evaluateJavascript(
+            "if (typeof refreshDevices === 'function' && document.getElementById('device')) {" +
+            "refreshDevices();" +
+            "if (typeof refreshStageOutputs === 'function' && document.getElementById('stageOutput')) refreshStageOutputs();" +
+            "}", null);
     }
     private boolean pendingStart = false;
     private boolean pendingBluetooth = false;
@@ -62,6 +73,10 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false); s.setAllowContentAccess(false); s.setMediaPlaybackRequiresUserGesture(true);
         web.setWebChromeClient(new android.webkit.WebChromeClient());
         web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                refreshUiAudioDevices();
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
                 // UI is a bundled, trusted asset; do not navigate to remote content with JS bridge enabled.
                 return !"file:///android_asset/index.html".equals(request.getUrl().toString());
