@@ -72,8 +72,8 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <p class="help">No USB sound card? Choose REHEARSAL to test your phone mic, DD-8 presets and WAV recorder WITHOUT a speaker output. For real stage PA audio, select an external/phone mic wired mode and connect a USB/wired output to your mixer. A plain OTG cable does not convert a 3.5mm microphone into USB audio.</p>
 <label>STAGE INPUT MODE</label>
 <select id="stageMode" onchange="onStageModeChange()">
-<option value="rehearsal" selected>0 — REHEARSAL • PHONE MIC + WAV • SPEAKER OFF (NO SOUNDCARD)</option>
-<option value="mono">1 — EXTERNAL MIC SOUNDCHECK (USB / 3.5mm headset; mono)</option>
+<option value="rehearsal">0 — REHEARSAL • PHONE MIC + WAV • SPEAKER OFF (NO SOUNDCARD)</option>
+<option value="mono" selected>1 — EXTERNAL MIC SOUNDCHECK (USB / 3.5mm headset; mono)</option>
 <option value="phone">2 — PHONE MIC → WIRED MIXER (mono soundcheck)</option>
 <option value="stereo">3 — MIC + INSTRUMENTS (two-channel USB; combined WAV)</option>
 </select>
@@ -379,10 +379,10 @@ function stageConnectionStatus(){
     'PHONE MIC NOT DETECTED — allow Microphone permission and refresh.':
     mode==='stereo'?
     'STEREO USB MIC INPUT MISSING — connect a 2-channel USB audio interface via OTG.':
-    'EXTERNAL MIC INPUT MISSING — plain OTG cannot read 3.5mm jack. Use USB sound card or compatible TRRS mic adapter.');
+    'USB MIC INPUT MISSING — connect Audio Array USB-C to phone, unlock phone, approve USB access, then REFRESH. Microphone plugged into Audio Array alone is not an Android USB connection.');
   }
   if(!rehearsal&&!selectedOutput)
-   issues.push('PA OUTPUT MISSING — connect USB LINE OUT or wired headset/mixer output; phone speaker is blocked for feedback safety.');
+   issues.push('PA OUTPUT MISSING — Android cannot see the Audio Array USB output. Check USB-C cable/OTG and REFRESH; speaker output is blocked for feedback safety.');
   if(stereoUnsupported)
    issues.push('2-channel USB capture unavailable — use mono external or phone soundcheck.');
   const ready=issues.length===0;
@@ -425,8 +425,8 @@ function refreshStageOutputs(){
   if(safe.some(d=>d.id===old))sel.value=old;
   else {const usb=safe.find(d=>d.kind==='usb');sel.value=(usb||safe[0])?.id||'default';}
   id('stageDiag').textContent=!safe.length?
-   '⚠ No USB/wired output detected. Connect an Android-compatible USB audio interface with LINE OUT or wired mixer output. For recording without hardware, select REHEARSAL mode.':
-   '✓ Wired output detected. Connect interface LINE OUT to mixer LINE IN. Start with PA gain LOW.';
+   '⚠ No USB/wired output detected. Connect the Audio Array USB-C cable to the phone and refresh. If already connected, Android has not exposed its audio output.':
+   '✓ USB/wired PA output detected: '+sel.options[sel.selectedIndex].textContent+'. Turn Audio Array DIRECT and LOOPBACK OFF; speaker volume LOW. Start Live Mehfil to verify actual audio routing.';
   stageConnectionStatus();
  }catch(e){id('stageDiag').textContent='Cannot list audio outputs: '+e.message;stageConnectionStatus();}
 }
