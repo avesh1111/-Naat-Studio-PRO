@@ -68,7 +68,7 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <section id="profilePage" class="panel" style="display:none"><button class="btn ghost" onclick="showHome()">← BACK</button><h2 style="text-align:center">MY PROFILE</h2><div class="avatar">♙</div><form id="profileForm" onsubmit="saveProfile(event)"><label for="profileName">FULL NAME</label><input id="profileName" type="text" maxlength="80" autocomplete="name" placeholder="Enter name" required><label for="profilePhone">MOBILE NUMBER</label><input id="profilePhone" type="tel" inputmode="tel" maxlength="16" placeholder="+91 98765 43210" required><label for="profileDob">DATE OF BIRTH</label><input id="profileDob" type="date" required><label for="profileEmail">EMAIL ID</label><input id="profileEmail" type="email" maxlength="120" placeholder="name@example.com" required><button type="submit" class="btn profileSave">✓ SAVE PROFILE</button><div class="status" id="profileSaved">Profile is saved locally on this device only.</div></form></section>
 <section id="settingsPage" class="panel" style="display:none"><button class="btn ghost" onclick="showHome()">← BACK</button><h2>SETTINGS</h2><button class="settingsTile" onclick="showProfile()">♙　My Profile　›</button><button class="settingsTile" onclick="openPresets()">♫　Preset Library　›</button><button class="settingsTile" onclick="openCategory('mehfil')">🎤　Live Mehfil　›</button><button class="settingsTile" onclick="openCategory('earbuds')">🎧　Bluetooth Studio　›</button><button class="settingsTile" onclick="openCategory('mobile')">📱　Mobile Mic Studio　›</button></section><div id="studioPage" style="display:none">
 <section class="panel"><div class="row" style="justify-content:space-between"><button class="btn ghost" onclick="showHome()">← ALL CATEGORIES</button><span class="chip" id="categoryBadge">MOBILE STUDIO</span></div><p class="catlead" id="categoryHelp"></p></section>
-<section id="mehfilMixer" class="panel" style="display:none"><h2>LIVE MEHFIL / DUAL INPUT MIXER</h2>
+<section id="mehfilMixer" class="panel" style="display:none"><h2 id="stageHeading">LIVE MEHFIL / DUAL INPUT MIXER</h2>
 <p class="help">No USB sound card? Choose REHEARSAL to test your phone mic, DD-8 presets and WAV recorder WITHOUT a speaker output. For real stage PA audio, select an external/phone mic wired mode and connect a USB/wired output to your mixer. A plain OTG cable does not convert a 3.5mm microphone into USB audio.</p>
 <label>STAGE INPUT MODE</label>
 <select id="stageMode" onchange="onStageModeChange()">
@@ -88,7 +88,7 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <div class="status" id="stageDiag" role="status" aria-live="polite">CONNECT: Mic → interface MIC IN; interface USB → OTG → phone; interface LINE OUT → mixer LINE IN → PA. Select USB output before starting. Keep PA volume very low.</div>
 <p class="tiny" id="stageModeHelp">MIC ONLY SOUNDCHECK records effected vocal only. For instruments and combined WAV select stereo after checking microphone and output.</p>
 <div class="mixrow"><label>🎤 CH 1 — VOCAL MIC / DD-8 ON</label><span id="micMixVal" class="right">65%</span><input id="micMix" type="range" min="0" max="100" value="65"/><div class="mixbar"><b id="micMixMeter"></b></div></div>
-<div class="mixrow"><label>🎹 CH 2 — INSTRUMENTS / FX OFF</label><span id="instMixVal" class="right">55%</span><input id="instMix" type="range" min="0" max="100" value="55"/><div class="mixbar gold"><b id="instMixMeter"></b></div></div>
+<div class="mixrow" id="instrumentMixerRow"><label>🎹 CH 2 — INSTRUMENTS / FX OFF</label><span id="instMixVal" class="right">55%</span><input id="instMix" type="range" min="0" max="100" value="55"/><div class="mixbar gold"><b id="instMixMeter"></b></div></div>
 <div class="notice">⚠ Never feed PA speaker output into the interface. Use LINE-level signal. Enable MONITOR only after a low-volume soundcheck; turn interface direct monitoring OFF to avoid doubled vocals. Separate faders require 2-channel USB capture supported by your phone.</div></section>
 <section class="panel" id="bluetoothLive" style="display:none"><h2>🎧 PHONE MIC → BLUETOOTH LIVE</h2>
 <p class="help">Sing into your PHONE microphone, hear the processed DD-8 Naat voice in paired Bluetooth earbuds or Bluetooth speaker. Use Android Bluetooth settings to connect first. Output may have noticeable delay and acoustic feedback; use low volume.</p>
@@ -303,6 +303,11 @@ function onStageModeChange(){
  const mode=id('stageMode').value;
  const stereo=mode==='stereo',phone=mode==='phone',rehearsal=mode==='rehearsal';
  id('stageOutputRow').style.display=rehearsal?'none':'block';
+ id('instrumentMixerRow').style.display=stereo?'block':'none';
+ id('stageHeading').textContent=rehearsal?
+   'LIVE MEHFIL / PHONE MIC REHEARSAL — SPEAKER OFF':
+   stereo?'LIVE MEHFIL / 2-CHANNEL USB MIXER':
+   'LIVE MEHFIL / WIRED MICROPHONE SOUNDCHECK';
  id('stageDryControls').style.display=rehearsal?'none':'block';
  id('wiredLatencyStatus').style.display=rehearsal?'none':'block';
  id('stageStartButton').textContent=rehearsal?'▶ START REHEARSAL MIC (NO SPEAKER)':'▶ START LIVE MEHFIL MIC';
@@ -333,6 +338,10 @@ function stageConnectionStatus(){
  if(native.micPermission&&!micAllowed()){
   msg.className='status error';
   msg.textContent='⚠ MICROPHONE PERMISSION REQUIRED — tap ALLOW / CHECK MICROPHONE PERMISSION before starting.';
+  if(!isRunning){
+    id('footStatus').textContent='MIC OFF • PERMISSION REQUIRED';
+    id('liveBtn').textContent='ALLOW MIC';
+  }
   return false;
  }
  try{
@@ -368,6 +377,16 @@ function stageConnectionStatus(){
    rehearsal?'✓ REHEARSAL READY • '+selectedInput.name+' • Mic → DD-8 → WAV. SPEAKER OFF. Tap START REHEARSAL MIC.':
    '✓ READY FOR LOW-VOLUME PA SOUNDCHECK • '+selectedInput.name+' → '+selectedOutput.name:
    '⚠ '+issues.join(' ');
+  if(!isRunning){
+   if(!ready){
+     const footer=id('footStatus');
+     footer.textContent=rehearsal?'MIC OFF • CHECK PERMISSION / INPUT':
+       (!selectedInput&&!selectedOutput?'MIC + PA OUTPUT MISSING':
+        !selectedInput?'MIC INPUT MISSING':
+        !selectedOutput?'PA OUTPUT MISSING':'INPUT CHANNELS UNSUPPORTED');
+     id('liveBtn').textContent='VIEW CONNECTION';
+   }else updateQuickAudio();
+  }
   return ready;
  }catch(e){
   msg.className='status error';msg.textContent='⚠ Audio device check failed: '+e.message;
