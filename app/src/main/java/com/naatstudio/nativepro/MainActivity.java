@@ -134,10 +134,17 @@ public class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
-        if (code == REQUEST_MIC && pendingStart) {
-            pendingStart = false;
-            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startRequested();
-            else postEvent("error", "Microphone permission denied. Enable it in Android App Settings.");
+        if (code == REQUEST_MIC) {
+            boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+            postEvent("micPermission", granted ? "granted" : "denied");
+            if (granted) refreshUiAudioDevices();
+            if (pendingStart) {
+                pendingStart = false;
+                if (granted) startRequested();
+                else postEvent("error", "Microphone permission denied. Android Settings → Apps → NAAT STUDIO → Permissions → Microphone → Allow.");
+            } else if (!granted) {
+                postEvent("error", "Microphone permission denied. Open Android app settings and allow Microphone to use rehearsal or recording.");
+            }
         } else if (code == 404 && pendingBluetooth) {
             pendingBluetooth = false;
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startRequested();
@@ -154,6 +161,19 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
     private final class Bridge {
+        @JavascriptInterface public boolean micPermission() {
+            return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        }
+        @JavascriptInterface public void requestMicPermission() {
+            runOnUiThread(() -> {
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    postEvent("micPermission", "granted");
+                    refreshUiAudioDevices();
+                } else {
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MIC);
+                }
+            });
+        }
         @JavascriptInterface public void start(String deviceId, boolean monitor) {
             requestedDevice = (deviceId == null || deviceId.isEmpty()) ? "default" : deviceId;
             requestedMonitor = monitor;
