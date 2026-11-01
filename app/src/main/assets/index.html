@@ -387,14 +387,16 @@ function startBluetoothLive(){
  native.startBluetoothLive(builtIn.id,selected);
 }
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
-function startMic(){if(!native){showStatus('This must run inside the Android APK.',true);return;}showStatus('Requesting Android native microphone…');if(!id('device').value){showStatus('Connect a compatible microphone first and press REFRESH MIC LIST.',true);return;}
+function startMic(){if(!native){showStatus('This must run inside the Android APK.',true);return;}
+ if(currentCategory==='mehfil'&&!stageConnectionStatus()){
+  const err=id('stageReady').textContent;showStatus(err,true);
+  id('stageReady').scrollIntoView({behavior:'smooth',block:'center'});return;
+ }
+ showStatus('Requesting Android native microphone…');
+ if(!id('device').value){showStatus('Choose a detected microphone or REFRESH MIC LIST.',true);return;}
  if(native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
  if(currentCategory==='mehfil'){
   lastStageError='';
-  if(!stageConnectionStatus()){
-   const err=id('stageReady').textContent;showStatus(err,true);
-   id('stageReady').scrollIntoView({behavior:'smooth',block:'center'});return;
-  }
   if(!id('monitor').checked){
    const err='Enable LIVE monitoring only after checking PA gain.';
    showStatus(err,true);id('stageDiag').textContent='⚠ '+err;
