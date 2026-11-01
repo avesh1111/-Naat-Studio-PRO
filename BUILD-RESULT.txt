@@ -4,40 +4,40 @@ Daemon will be stopped at the end of the build
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
 > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
-> Task :app:checkDebugAarMetadata
 > Task :app:javaPreCompileDebug
+> Task :app:checkDebugAarMetadata
 > Task :app:generateDebugResValues
 > Task :app:mapDebugSourceSetPaths
 > Task :app:generateDebugResources
 > Task :app:createDebugCompatibleScreenManifests
 > Task :app:extractDeepLinksDebug
-> Task :app:processDebugMainManifest
 > Task :app:mergeDebugResources
-> Task :app:processDebugManifest
+> Task :app:processDebugMainManifest
 > Task :app:packageDebugResources
-> Task :app:processDebugManifestForPackage
-> Task :app:mergeDebugShaders
 > Task :app:parseDebugLocalResources
+> Task :app:processDebugManifest
+> Task :app:mergeDebugShaders
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
 > Task :app:mergeDebugAssets
+> Task :app:processDebugManifestForPackage
 > Task :app:compressDebugAssets
 > Task :app:desugarDebugFileDependencies
 > Task :app:processDebugJavaRes NO-SOURCE
 > Task :app:mergeDebugJavaResource
-> Task :app:processDebugResources
 > Task :app:checkDebugDuplicateClasses
+> Task :app:mergeExtDexDebug
+> Task :app:mergeLibDexDebug
+> Task :app:mergeDebugJniLibFolders
+> Task :app:processDebugResources
+> Task :app:mergeDebugNativeLibs NO-SOURCE
 
 > Task :app:compileDebugJavaWithJavac
 Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
 
 > Task :app:dexBuilderDebug
-> Task :app:mergeExtDexDebug
 > Task :app:mergeDebugGlobalSynthetics
-> Task :app:mergeLibDexDebug
-> Task :app:mergeDebugJniLibFolders
-> Task :app:mergeDebugNativeLibs NO-SOURCE
 > Task :app:stripDebugDebugSymbols NO-SOURCE
 > Task :app:mergeProjectDexDebug
 > Task :app:validateSigningDebug
@@ -46,7 +46,7 @@ Note: Recompile with -Xlint:deprecation for details.
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793541452520.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793542390025.json
 
-BUILD SUCCESSFUL in 22s
+BUILD SUCCESSFUL in 23s
 32 actionable tasks: 32 executed
