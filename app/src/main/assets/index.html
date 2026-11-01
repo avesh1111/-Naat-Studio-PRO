@@ -250,7 +250,8 @@ function stageConnectionStatus(){
   const selectedInput=usb.find(d=>d.id===id('device').value);
   const selectedOutput=safe.find(d=>d.id===id('stageOutput').value);
   const stereo=id('stageMode').value==='stereo',counts=selectedInput?.channelCounts||'';
-  const stereoUnsupported=stereo&&counts.length>0&&!(/\\b[2-9]\\d*\\b/.test(counts));
+  const knownCounts=String(counts).match(/[0-9]+/g);
+  const stereoUnsupported=stereo&&knownCounts&&!knownCounts.some(v=>Number(v)>=2);
   const issues=[];
   if(!selectedInput)issues.push('USB MIC INPUT MISSING — connect USB mic/interface via OTG, then REFRESH.');
   if(!selectedOutput)issues.push('PA OUTPUT MISSING — connect/select USB LINE OUT or wired mixer output. Phone speaker is unsafe.');
