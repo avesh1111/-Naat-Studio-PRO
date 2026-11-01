@@ -425,7 +425,7 @@ function refreshStageOutputs(){
   if(safe.some(d=>d.id===old))sel.value=old;
   else {const usb=safe.find(d=>d.kind==='usb');sel.value=(usb||safe[0])?.id||'default';}
   id('stageDiag').textContent=!safe.length?
-   '⚠ No USB/wired output detected. Connect the Audio Array USB-C cable to the phone and refresh. If already connected, Android has not exposed its audio output.':
+   '⚠ No supported USB/wired PA output in Android list. Detected: '+found.map(d=>d.name+' [kind='+d.kind+', type='+d.type+']').join(' | ')+'. YouTube working does not guarantee Android reports a selectable output.':
    '✓ USB/wired PA output detected: '+sel.options[sel.selectedIndex].textContent+'. Turn Audio Array DIRECT and LOOPBACK OFF; speaker volume LOW. Start Live Mehfil to verify actual audio routing.';
   stageConnectionStatus();
  }catch(e){id('stageDiag').textContent='Cannot list audio outputs: '+e.message;stageConnectionStatus();}
