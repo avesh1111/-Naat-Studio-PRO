@@ -184,6 +184,7 @@ public final class NativeAudioEngine {
                 o.put("name", d.getProductName().toString() + " (" + deviceKind(d.getType()) + ")");
                 int t = d.getType();
                 o.put("kind", t == AudioDeviceInfo.TYPE_USB_DEVICE || t == AudioDeviceInfo.TYPE_USB_HEADSET ? "usb"
+                    : t == AudioDeviceInfo.TYPE_WIRED_HEADSET ? "wired"
                     : t == AudioDeviceInfo.TYPE_BUILTIN_MIC ? "phone"
                     : t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= 31 && t == AudioDeviceInfo.TYPE_BLE_HEADSET) ? "bt" : "other");
                 o.put("channelCounts", java.util.Arrays.toString(d.getChannelCounts()));
@@ -224,7 +225,8 @@ public final class NativeAudioEngine {
     private String deviceKind(int type) {
         if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return "Bluetooth call mic";
         if (Build.VERSION.SDK_INT >= 31 && type == AudioDeviceInfo.TYPE_BLE_HEADSET) return "Bluetooth LE mic";
-        if (type == AudioDeviceInfo.TYPE_USB_DEVICE || type == AudioDeviceInfo.TYPE_USB_HEADSET) return "USB mic";
+        if (type == AudioDeviceInfo.TYPE_USB_DEVICE || type == AudioDeviceInfo.TYPE_USB_HEADSET) return "USB mic/audio interface";
+        if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET) return "3.5mm wired headset mic";
         if (type == AudioDeviceInfo.TYPE_BUILTIN_MIC) return "Phone mic";
         return "input " + type;
     }
@@ -296,7 +298,8 @@ public final class NativeAudioEngine {
             return;
         }
         if ((mehfilMode || stageVocalOnly) && (requestedDevice == null || "default".equals(requestedDevice))) {
-            emit("error", "Live Mehfil requires USB audio input. Connect interface via OTG and tap REFRESH."); return;
+            emit("error", "LIVE MEHFIL MIC INPUT MISSING: choose connected USB mic, compatible 3.5mm headset mic, or built-in phone mic soundcheck; then REFRESH.");
+            return;
         }
         boolean chosenBluetooth = false;
         AudioDeviceInfo chosen = null;
@@ -316,10 +319,19 @@ public final class NativeAudioEngine {
                 }
             } catch (SecurityException err) { emit("hint", "Nearby devices permission is required for Bluetooth input."); }
             if (chosen == null) { emit("error", "Selected mic disappeared. Choose Android default and retry."); return; }
-            if ((mehfilMode || stageVocalOnly) &&
-                 chosen.getType() != AudioDeviceInfo.TYPE_USB_DEVICE &&
-                 chosen.getType() != AudioDeviceInfo.TYPE_USB_HEADSET) {
-                emit("error", "Live Mehfil input must be USB audio interface. Select USB mic from list."); return;
+            if (mehfilMode &&
+                chosen.getType() != AudioDeviceInfo.TYPE_USB_DEVICE &&
+                chosen.getType() != AudioDeviceInfo.TYPE_USB_HEADSET) {
+                emit("error", "TWO INPUT LIVE MEHFIL requires a USB stereo audio interface. Use mono soundcheck for wired or phone microphones.");
+                return;
+            }
+            if (stageVocalOnly &&
+                chosen.getType() != AudioDeviceInfo.TYPE_USB_DEVICE &&
+                chosen.getType() != AudioDeviceInfo.TYPE_USB_HEADSET &&
+                chosen.getType() != AudioDeviceInfo.TYPE_WIRED_HEADSET &&
+                chosen.getType() != AudioDeviceInfo.TYPE_BUILTIN_MIC) {
+                emit("error", "MIC NOT SUPPORTED: choose Android-listed USB, 3.5mm headset or phone microphone; check adapter compatibility.");
+                return;
             }
             if (mehfilMode) {
                 int[] availableCounts = chosen.getChannelCounts();
@@ -498,7 +510,9 @@ public final class NativeAudioEngine {
             worker.setPriority(Thread.MAX_PRIORITY);
             worker.start();
             emit("status", "MIC CONNECTED • " +
-                (mehfilMode ? "MEHFIL USB STEREO" : stageVocalOnly ? "MEHFIL USB MIC SOUNDCHECK" : bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
+                (mehfilMode ? "MEHFIL USB STEREO" :
+                 stageVocalOnly ? "MEHFIL WIRED SOUND CHECK" :
+                 bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
                 " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth microphone requested" : ""));
             if (lowLatencyPath && !bluetoothPlayback) {
                 emit("latency", "FAST WIRED • " + sampleRate + " Hz • " +
@@ -684,7 +698,7 @@ public final class NativeAudioEngine {
                         }
                         if (!stageInputVerified && liveIn != null) {
                             stageInputVerified = true;
-                            emit("stage", "USB MIC ACTIVE: " + liveIn.getProductName() + " • " +
+                            emit("stage", "LIVE INPUT ACTIVE: " + liveIn.getProductName() + " • " +
                                 (mehfil ? "Stereo Mic+Instrument" : "Mono vocal soundcheck"));
                         }
                         if (!stageOutputVerified && monitor) {
