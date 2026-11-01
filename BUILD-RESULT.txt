@@ -26,8 +26,11 @@ Daemon will be stopped at the end of the build
 > Task :app:processDebugJavaRes NO-SOURCE
 > Task :app:mergeDebugJavaResource
 > Task :app:checkDebugDuplicateClasses
-> Task :app:processDebugResources
 > Task :app:mergeExtDexDebug
+> Task :app:mergeLibDexDebug
+> Task :app:mergeDebugJniLibFolders
+> Task :app:processDebugResources
+> Task :app:mergeDebugNativeLibs NO-SOURCE
 
 > Task :app:compileDebugJavaWithJavac
 Note: Some input files use or override a deprecated API.
@@ -35,9 +38,6 @@ Note: Recompile with -Xlint:deprecation for details.
 
 > Task :app:dexBuilderDebug
 > Task :app:mergeDebugGlobalSynthetics
-> Task :app:mergeLibDexDebug
-> Task :app:mergeDebugJniLibFolders
-> Task :app:mergeDebugNativeLibs NO-SOURCE
 > Task :app:stripDebugDebugSymbols NO-SOURCE
 > Task :app:mergeProjectDexDebug
 > Task :app:validateSigningDebug
@@ -46,7 +46,7 @@ Note: Recompile with -Xlint:deprecation for details.
 > Task :app:packageDebug
 > Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793535650707.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/compile-1793535709575.json
 
-BUILD SUCCESSFUL in 16s
+BUILD SUCCESSFUL in 22s
 32 actionable tasks: 32 executed
