@@ -80,6 +80,8 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <div id="stageOutputRow"><label>PA / MIXER AUDIO OUTPUT</label>
 <select id="stageOutput"><option value="default">Android default output (check routing!)</option></select></div>
 <div class="twocol"><button class="btn ghost" onclick="refreshDevices();refreshStageOutputs()">↻ REFRESH AUDIO DEVICES</button><button class="btn" id="stageStartButton" onclick="startMic()">▶ START MEHFIL REHEARSAL MIC</button></div>
+<button class="btn ghost" id="micPermissionButton" style="width:100%;margin-top:10px" onclick="requestMicAccess()">🎙 ALLOW / CHECK MICROPHONE PERMISSION</button>
+<div class="tiny" id="micPermissionsHelp">If MIC stays OFF, tap ALLOW and approve Android Microphone permission. Rehearsal records audio but will NOT play live on phone speaker.</div>
 <div class="status" id="stageReady" role="status" aria-live="polite">CHECKING • Select a mic input and USB/wired mixer output, then REFRESH.</div>
 <div class="mixrow" id="stageDryControls" style="margin-top:12px"><label for="wiredDryTest">⚡ FAST WIRED DRY LATENCY TEST — no echo/reverb repeats</label><div class="toggle"><input type="checkbox" id="wiredDryTest"/><span>ON = direct processed-mic bypass for diagnosing actual wired delay; OFF = use your saved DD-8 preset</span></div><div class="tiny">For soundcheck only. Does not change or overwrite CH1–CH5 or custom presets. Start with PA gain low; disable interface direct monitoring to avoid doubled sound.</div></div>
 <div class="status" id="wiredLatencyStatus" role="status">WIRED LATENCY: Start MIC to view Android playback queue and underruns. This is not a mic-to-speaker latency measurement.</div>
@@ -191,6 +193,46 @@ const id=k=>document.getElementById(k);
 const native=window.NativeApp;
 let currentCategory=null;
 let lastStageError='';
+let continueRehearsalAfterPermission=false;
+function micAllowed(){
+ try { return !!(native&&native.micPermission&&native.micPermission()); }
+ catch(e){return false;}
+}
+function requestMicAccess(){
+ if(!native||!native.requestMicPermission){
+  showStatus('Native microphone permission control unavailable. Reopen the Android APK.',true);return;
+ }
+ const ready=micAllowed();
+ if(ready){
+  id('micPermissionsHelp').textContent='✓ Android microphone permission ALLOWED. Tap START to begin the microphone.';
+  if(currentCategory==='mehfil'){refreshDevices();refreshStageOutputs();}
+ }else{
+  id('micPermissionsHelp').textContent='Android will ask for microphone access. Select ALLOW WHILE USING THE APP.';
+  showStatus('Microphone permission requested. Approve the Android prompt.',true);
+ }
+ native.requestMicPermission();
+}
+function updateQuickAudio(){
+ const footer=id('footStatus'),button=id('liveBtn');
+ if(!footer||!button)return;
+ if(isRunning){
+  footer.textContent=currentCategory==='mehfil'&&id('stageMode').value==='rehearsal'?
+   'REHEARSAL MIC ACTIVE • SPEAKER OFF':'MICROPHONE CONNECTED';
+  button.textContent='STOP MIC';return;
+ }
+ if(currentCategory==='mehfil'){
+  const rehearsal=id('stageMode').value==='rehearsal';
+  const permitted=micAllowed();
+  footer.textContent=!permitted?'MIC PERMISSION NEEDED':
+   rehearsal?'MIC OFF • REHEARSAL (SPEAKER OFF)':
+   'MIC OFF • USB/WIRED PA CONNECTION NEEDED';
+  button.textContent=!permitted?'ALLOW MIC':
+   rehearsal?'START REHEARSAL':'CHECK / START LIVE';
+ }else{
+  footer.textContent='MICROPHONE OFF';
+  button.textContent='START MIC';
+ }
+}
 function setMix(){id('micMixVal').textContent=id('micMix').value+'%';id('instMixVal').textContent=id('instMix').value+'%';if(native&&native.mix)native.mix(+id('micMix').value/100,+id('instMix').value/100);}
 ['micMix','instMix'].forEach(k=>id(k).addEventListener('input',setMix));
 function openCategory(category){
@@ -210,10 +252,11 @@ function openCategory(category){
  setMix();refreshDevices();if(b)refreshOutputs();if(m){
   if(native&&native.wiredDryTest)native.wiredDryTest(id('wiredDryTest').checked);
   onStageModeChange();refreshStageOutputs();
-}window.scrollTo(0,0);
+}
+updateQuickAudio();window.scrollTo(0,0);
 }
 function showHome(){hideProfileSettings();id('luxHeader').style.display='block';navSelect('home');if(isRunning){if(!confirm('Stop current microphone and save any active recording before switching?'))return;stopMic();}
- currentCategory=null;id('studioPage').style.display='none';id('categoryHome').style.display='block';document.querySelector('.footer').hidden=true;window.scrollTo(0,0);
+ currentCategory=null;continueRehearsalAfterPermission=false;updateQuickAudio();id('studioPage').style.display='none';id('categoryHome').style.display='block';document.querySelector('.footer').hidden=true;window.scrollTo(0,0);
 }
 function persist(){savePresetStorage();}
 function showStatus(message,error=false){id('status').textContent=message;id('status').className='status'+(error?' error':'');}
@@ -272,6 +315,7 @@ function onStageModeChange(){
  phone?
  'PHONE MIC WIRED SOUND CHECK: built-in phone mic → USB/wired mixer LINE OUT. Low PA volume; feedback risk. External 3.5mm mic not used.':
  'EXTERNAL MIC WIRED SOUND CHECK: Android-detected USB or compatible 3.5mm headset mic and separate wired PA output are required.';
+ updateQuickAudio();
  id('recordStatus').textContent=rehearsal?'READY • Start rehearsal mic; then tap START RECORDING for effected WAV. Speaker output OFF.':
  stereo?'READY • Stereo USB mic+instruments combined WAV':
  phone?'READY • Phone microphone mono WAV soundcheck':'READY • External microphone mono WAV soundcheck';
@@ -284,6 +328,11 @@ function stageConnectionStatus(){
  if(!native||!native.microphones){
   msg.className='status error';
   msg.textContent='⚠ Native Android microphone service not ready. Restart app or REFRESH AUDIO DEVICES.';
+  return false;
+ }
+ if(native.micPermission&&!micAllowed()){
+  msg.className='status error';
+  msg.textContent='⚠ MICROPHONE PERMISSION REQUIRED — tap ALLOW / CHECK MICROPHONE PERMISSION before starting.';
   return false;
  }
  try{
@@ -413,6 +462,14 @@ function startBluetoothLive(){
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
 function startMic(){
  if(!native){showStatus('Native Android APK required for audio.',true);return;}
+ if(native.micPermission&&!micAllowed()){
+  continueRehearsalAfterPermission=currentCategory==='mehfil'&&id('stageMode').value==='rehearsal';
+  showStatus('Android microphone permission needed before Live Mehfil can start.',true);
+  requestMicAccess();
+  if(currentCategory==='mehfil')id('stageReady').textContent='⚠ ALLOW MICROPHONE permission; then rehearsal can start.';
+  updateQuickAudio();
+  return;
+ }
  if(currentCategory==='mehfil'&&!stageConnectionStatus()){
   const err=id('stageReady').textContent;showStatus(err,true);
   id('stageReady').scrollIntoView({behavior:'smooth',block:'center'});return;
@@ -449,9 +506,18 @@ function startMic(){
   native.start(id('device').value,id('monitor').checked);
  }
 }
-function stopMic(){if(native)native.stop();isRunning=false;id('liveBtn').textContent='START MIC';id('footStatus').textContent='MICROPHONE OFF';}
+function stopMic(){if(native)native.stop();isRunning=false;continueRehearsalAfterPermission=false;updateQuickAudio();}
 function toggleLive(){isRunning?stopMic():startMic();}
-function startRec(){if(!native)return;native.recordStart(id('recordName').value,currentCategory!=='mehfil'&&id('recordRaw').checked);}
+function startRec(){
+ if(!native)return;
+ if(!isRunning){
+  showStatus('MIC OFF: start the microphone first, then press START RECORDING.',true);
+  id('recordStatus').textContent='⚠ START MIC FIRST • For no sound card choose Live Mehfil → REHEARSAL (SPEAKER OFF).';
+  if(currentCategory==='mehfil')id('stageReady').scrollIntoView({behavior:'smooth',block:'center'});
+  return;
+ }
+ native.recordStart(id('recordName').value,currentCategory!=='mehfil'&&id('recordRaw').checked);
+}
 function setWarp(on){if(native)native.warp(on);}
 function loop(act){if(native)native.loop(act);}
 function toggleBypass(){bypass=!bypass;id('bypassStatus').textContent=bypass?'BYPASS ON':'FX ON';refreshKnobs();}
@@ -459,7 +525,8 @@ id('bypassBtn').addEventListener('click',toggleBypass);
 function tapTempo(){let now=Date.now();if(now-lastTap>2800)taps=[];if(lastTap)taps.push(now-lastTap);if(taps.length>4)taps.shift();lastTap=now;let avg=taps.reduce((a,b)=>a+b,0)/(taps.length||1);if(taps.length&&avg>170){let bpm=Math.round(60000/avg);id('tempo').textContent=bpm+' BPM';id('time').value=Math.max(20,Math.min(2000,Math.round(avg/10)*10));refreshKnobs();}}
 window.nativeEvent=(type,txt)=>{
  if(type==='status'){
-   isRunning=txt.startsWith('MIC CONNECTED');id('nativeStatus').textContent=txt;id('liveBtn').textContent=isRunning?'STOP MIC':'START MIC';id('footStatus').textContent=isRunning?'MICROPHONE CONNECTED':'MICROPHONE OFF';
+   isRunning=txt.startsWith('MIC CONNECTED');id('nativeStatus').textContent=txt;
+   updateQuickAudio();
    if(isRunning) lastStageError='';
    if(currentCategory==='mehfil'&&isRunning&&id('stageMode').value==='rehearsal'){
      id('stageReady').className='status';
@@ -467,6 +534,25 @@ window.nativeEvent=(type,txt)=>{
    }
    if(currentCategory==='mehfil'&&!isRunning&&lastStageError)showStatus(lastStageError,true);
    else showStatus(txt);
+ } else if(type==='micPermission'){
+   if(txt==='granted'){
+     id('micPermissionsHelp').textContent='✓ Android Microphone permission ALLOWED.';
+     showStatus('Microphone permission granted. Audio device list refreshed.');
+     refreshDevices();
+     if(currentCategory==='mehfil'){
+       refreshStageOutputs();updateQuickAudio();
+       if(continueRehearsalAfterPermission&&id('stageMode').value==='rehearsal'){
+         continueRehearsalAfterPermission=false;
+         startMic();
+       }
+     }
+   }else{
+     continueRehearsalAfterPermission=false;
+     id('micPermissionsHelp').textContent='⚠ Microphone permission DENIED. Android Settings → Apps → NAAT STUDIO → Permissions → Microphone.';
+     if(currentCategory==='mehfil')id('stageReady').textContent='⚠ MIC PERMISSION DENIED. Enable it in Android Settings.';
+     showStatus('Microphone permission denied; enable it in Android Settings.',true);
+   }
+   updateQuickAudio();
  } else if(type==='stage'){id('stageDiag').textContent=txt;
  } else if(type==='noise'){id('noiseStatus').textContent=txt;
  } else if(type==='latency'){id('latencyStatus').textContent=txt;
@@ -474,6 +560,7 @@ window.nativeEvent=(type,txt)=>{
    if(currentCategory==='mobile'&&id('monitor').checked)id('mobileWiredTestStatus').textContent=txt;
  } else if(type==='route'){id('btRouteStatus').textContent=txt;showStatus(txt);
  } else if(type==='error'){if(currentCategory==='earbuds')id('btRouteStatus').textContent=txt;
+   if(!isRunning&&currentCategory==='mehfil')id('footStatus').textContent='MIC OFF • CHECK CONNECTION / PERMISSION';
  if(currentCategory==='mehfil'){lastStageError=txt;id('stageDiag').textContent=txt;id('stageReady').textContent='⚠ '+txt;id('stageReady').className='status error';}
  showStatus(txt,true);id('recordStatus').textContent=txt;
  } else if(type==='hint'){showStatus(txt);
