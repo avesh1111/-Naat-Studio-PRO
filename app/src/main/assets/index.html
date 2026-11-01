@@ -223,11 +223,19 @@ function updateQuickAudio(){
  if(currentCategory==='mehfil'){
   const rehearsal=id('stageMode').value==='rehearsal';
   const permitted=micAllowed();
-  footer.textContent=!permitted?'MIC PERMISSION NEEDED':
+  const msg=id('stageReady'),issue=msg&&msg.className.includes('error')?msg.textContent:'';
+  const noInput=issue.includes('INPUT MISSING')||issue.includes('MICROPHONE UNAVAILABLE');
+  const noOutput=issue.includes('OUTPUT MISSING');
+  footer.textContent=!permitted?'MIC OFF • PERMISSION REQUIRED':
+   noInput&&noOutput?'MIC INPUT + PA OUTPUT MISSING':
+   noInput?'MIC INPUT MISSING':
+   noOutput?'PA OUTPUT MISSING':
+   issue?'MIC OFF • CHECK CONNECTION ABOVE':
    rehearsal?'MIC OFF • REHEARSAL (SPEAKER OFF)':
-   'MIC OFF • USB/WIRED PA CONNECTION NEEDED';
+   'MIC OFF • READY FOR WIRED SOUNDCHECK';
   button.textContent=!permitted?'ALLOW MIC':
-   rehearsal?'START REHEARSAL':'CHECK / START LIVE';
+   issue?'VIEW CONNECTION':
+   rehearsal?'START REHEARSAL':'START LIVE MIC';
  }else{
   footer.textContent='MICROPHONE OFF';
   button.textContent='START MIC';
