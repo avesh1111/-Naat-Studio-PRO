@@ -279,7 +279,10 @@ public final class NativeAudioEngine {
                 boolean stageWired = stageType == AudioDeviceInfo.TYPE_USB_DEVICE ||
                     stageType == AudioDeviceInfo.TYPE_USB_HEADSET ||
                     stageType == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                    stageType == AudioDeviceInfo.TYPE_WIRED_HEADSET;
+                    stageType == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    stageType == AudioDeviceInfo.TYPE_LINE_ANALOG ||
+                    stageType == AudioDeviceInfo.TYPE_LINE_DIGITAL ||
+                    stageType == AudioDeviceInfo.TYPE_USB_ACCESSORY;
                 if (!stageWired) {
                     emit("error", "LIVE MEHFIL PA OUTPUT UNSAFE: select USB LINE OUT or wired mixer, not phone or Bluetooth speaker.");
                     return;
