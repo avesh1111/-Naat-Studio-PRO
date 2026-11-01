@@ -78,7 +78,8 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <label>PA / MIXER AUDIO OUTPUT</label>
 <select id="stageOutput"><option value="default">Android default output (check routing!)</option></select>
 <div class="twocol"><button class="btn ghost" onclick="refreshDevices();refreshStageOutputs()">↻ REFRESH USB DEVICES</button><button class="btn" onclick="startMic()">▶ START LIVE MEHFIL MIC</button></div>
-<div class="status" id="stageDiag">CONNECT: Mic → interface MIC IN; interface USB → OTG → phone; interface LINE OUT → mixer LINE IN → PA. Select USB output before starting. Keep PA volume very low.</div>
+<div class="status" id="stageReady" role="status" aria-live="polite">CHECKING • Connect USB microphone and USB/wired mixer output, then tap REFRESH.</div>
+<div class="status" id="stageDiag" role="status" aria-live="polite">CONNECT: Mic → interface MIC IN; interface USB → OTG → phone; interface LINE OUT → mixer LINE IN → PA. Select USB output before starting. Keep PA volume very low.</div>
 <p class="tiny" id="stageModeHelp">MIC ONLY SOUNDCHECK records effected vocal only. For instruments and combined WAV select stereo after checking microphone and output.</p>
 <div class="mixrow"><label>🎤 CH 1 — VOCAL MIC / DD-8 ON</label><span id="micMixVal" class="right">65%</span><input id="micMix" type="range" min="0" max="100" value="65"/><div class="mixbar"><b id="micMixMeter"></b></div></div>
 <div class="mixrow"><label>🎹 CH 2 — INSTRUMENTS / FX OFF</label><span id="instMixVal" class="right">55%</span><input id="instMix" type="range" min="0" max="100" value="55"/><div class="mixbar gold"><b id="instMixMeter"></b></div></div>
@@ -235,28 +236,50 @@ function onStageModeChange(){
  'STEREO: USB IN LEFT = Vocal Mic + DD-8, RIGHT = dry instruments. Requires USB interface with independent stereo CAPTURE. App faders + combined recording work.':
  'SOUNDCHECK: One USB mic with DD-8; confirm meter and PA routing first. Instruments are not in app mix / recording. Connect instruments directly to mixer.';
  id('recordStatus').textContent=stereo?'READY • Stereo mic+instruments combined WAV':'READY • Mono vocal-only WAV soundcheck';
+ stageConnectionStatus();
+}
+function stageConnectionStatus(){
+ if(currentCategory!=='mehfil')return false;
+ const msg=id('stageReady');
+ if(!native||!native.microphones||!native.outputs){
+  msg.className='status error';msg.textContent='⚠ Android audio service not ready. Retry REFRESH USB DEVICES.';return false;
+ }
+ try{
+  const ins=JSON.parse(native.microphones()),outs=JSON.parse(native.outputs());
+  const usb=ins.filter(d=>d.kind==='usb'),safe=outs.filter(d=>d.kind==='usb'||d.kind==='wired');
+  const selectedInput=usb.find(d=>d.id===id('device').value);
+  const selectedOutput=safe.find(d=>d.id===id('stageOutput').value);
+  const stereo=id('stageMode').value==='stereo',counts=selectedInput?.channelCounts||'';
+  const stereoUnsupported=stereo&&counts.length>0&&!(/\\b[2-9]\\d*\\b/.test(counts));
+  const issues=[];
+  if(!selectedInput)issues.push('USB MIC INPUT MISSING — connect USB mic/interface via OTG, then REFRESH.');
+  if(!selectedOutput)issues.push('PA OUTPUT MISSING — connect/select USB LINE OUT or wired mixer output. Phone speaker is unsafe.');
+  if(stereoUnsupported)issues.push('2-channel USB input unavailable — use MIC ONLY SOUNDCHECK or a stereo interface.');
+  const ready=!issues.length;
+  msg.className='status'+(ready?'':' error');
+  msg.textContent=ready?
+   '✓ USB MIC + PA OUTPUT DETECTED • '+selectedInput.name+' → '+selectedOutput.name+' • Start at LOW volume.':
+   '⚠ '+issues.join(' ');
+  return ready;
+ }catch(e){msg.className='status error';msg.textContent='⚠ Audio device check failed: '+e.message;return false;}
 }
 function refreshStageOutputs(){
  if(!native||!native.outputs)return;
- try {
+ try{
   const found=JSON.parse(native.outputs());
-  const sel=id('stageOutput'),old=sel.value;
-  sel.innerHTML='';
+  const safe=found.filter(d=>d.kind==='usb'||d.kind==='wired');
+  const sel=id('stageOutput'),old=sel.value;sel.innerHTML='';
   const fallback=document.createElement('option');fallback.value='default';
-  fallback.textContent='Android default (not recommended for live PA)';sel.appendChild(fallback);
-  let preferred='';
-  found.filter(d=>d.id!=='default').forEach(d=>{
-    const o=document.createElement('option');o.value=d.id;
-    o.textContent=d.name + (d.kind==='usb'?' • USB LINE OUT':d.kind==='wired'?' • Wired Output':'');
-    sel.appendChild(o);
-    if(d.kind==='usb'&&!preferred)preferred=d.id;
-  });
-  if([...sel.options].some(o=>o.value===old)&&old!=='default')sel.value=old;
-  else if(preferred)sel.value=preferred;
-  if(sel.value==='default'){
-   id('stageDiag').textContent='⚠ No USB audio output selected. Connect OTG sound interface (USB output) and REFRESH, or use a suitable wired mixer output. Phone speaker may cause feedback.';
-  }else id('stageDiag').textContent='Output chosen. Connect interface LINE OUT to mixer LINE IN. Start with low PA volume. Test MIC ONLY first.';
- }catch(e){id('stageDiag').textContent='Cannot list audio outputs: '+e.message;}
+  fallback.textContent='Select USB/wired PA output (phone speaker unsafe)';sel.appendChild(fallback);
+  safe.forEach(d=>{const o=document.createElement('option');o.value=d.id;
+    o.textContent=d.name+(d.kind==='usb'?' • USB LINE OUT':' • Wired mixer/headphone');sel.appendChild(o);});
+  if(safe.some(d=>d.id===old))sel.value=old;
+  else {const usb=safe.find(d=>d.kind==='usb');sel.value=(usb||safe[0])?.id||'default';}
+  id('stageDiag').textContent=!safe.length?
+   '⚠ No USB/wired output detected. Connect an Android-compatible USB interface with LINE OUT or a wired mixer output and REFRESH. A mic-only USB device cannot provide speaker output.':
+   '✓ Output detected. Connect interface LINE OUT to mixer LINE IN. Test MIC ONLY first with LOW PA volume.';
+  stageConnectionStatus();
+ }catch(e){id('stageDiag').textContent='Cannot list audio outputs: '+e.message;stageConnectionStatus();}
 }
 function refreshDevices(){
  if(!native){showStatus('Install the native Android APK to list microphones.',true);return;}
@@ -269,6 +292,7 @@ function refreshDevices(){
   if(usable.length===0){const o=document.createElement('option');o.value='';o.textContent=currentCategory==='mehfil'?'Connect a 2-channel USB audio interface using OTG':currentCategory==='earbuds'?'No built-in mobile microphone detected':'No phone microphone found';sel.appendChild(o);showStatus(o.textContent,true);}
   else{if([...sel.options].some(o=>o.value===selected))sel.value=selected;else if((currentCategory==='mobile'||currentCategory==='earbuds')&&[...sel.options].some(o=>o.value==='default'))sel.value='default';showStatus('Audio input list refreshed. Check correct physical routing before starting.');}
  }catch(e){showStatus('Failed to list microphones: '+e.message,true);}
+ if(currentCategory==='mehfil')stageConnectionStatus();
 }
 function refreshOutputs(){
  if(!native||!native.outputs)return;
@@ -304,14 +328,21 @@ function startMic(){if(!native){showStatus('This must run inside the Android APK
  if(native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
  if(currentCategory==='mehfil'){
   lastStageError='';
+  if(!stageConnectionStatus()){
+   const err=id('stageReady').textContent;showStatus(err,true);
+   id('stageReady').scrollIntoView({behavior:'smooth',block:'center'});return;
+  }
   if(!id('monitor').checked){
-   showStatus('Enable LIVE monitoring to hear microphone through PA output.',true);
-   return;
+   const err='Enable LIVE monitoring only after checking PA gain.';
+   showStatus(err,true);id('stageDiag').textContent='⚠ '+err;
+   id('stageDiag').scrollIntoView({behavior:'smooth',block:'center'});return;
   }
   const out=id('stageOutput').value;
   if(out==='default'){
-   id('stageDiag').textContent='⚠ Default output selected: Android may route sound to PHONE speaker. Check connections, choose USB output, then start with low volume.';
+   id('stageDiag').textContent='⚠ Select USB/wired PA output; phone speaker is unsafe.';
+   id('stageDiag').scrollIntoView({behavior:'smooth',block:'center'});return;
   }
+  id('stageReady').textContent='STARTING • Requesting microphone permission and USB routing…';
   native.startMehfil(id('device').value,true,out,id('stageMode').value==='stereo');
  }else native.start(id('device').value,id('monitor').checked);}
 function stopMic(){if(native)native.stop();isRunning=false;id('liveBtn').textContent='START MIC';id('footStatus').textContent='MICROPHONE OFF';}
@@ -356,4 +387,7 @@ function openMixer(){openCategory('mehfil');navSelect('mixer');id('mehfilMixer')
 function updateHeroChannels(){const wrap=id('heroChannels');if(!wrap)return;wrap.innerHTML='';presets.forEach((p,i)=>{const btn=document.createElement('button');btn.type='button';btn.className=i===active?'chosen':'';btn.innerHTML='<b>≋</b>CH'+(i+1);btn.title=p.name;btn.addEventListener('click',()=>loadChannel(i));wrap.appendChild(btn);});if(id('homePresetName'))id('homePresetName').textContent=presets[active].name;}
 function saveProfile(ev){ev.preventDefault();const name=id('profileName').value.trim(),phone=id('profilePhone').value.trim(),dob=id('profileDob').value,email=id('profileEmail').value.trim();const status=id('profileSaved');if(!name||phone.length<8||phone.length>16||!dob||!email.includes('@')){status.className='status error';status.textContent='Please enter all four fields correctly.';return;}const today=new Date().toISOString().slice(0,10);if(dob>today){status.className='status error';status.textContent='Date of birth cannot be in the future.';return;}try{localStorage.setItem('naat_studio_profile_v1',JSON.stringify({name,phone,dob,email}));status.className='status';status.textContent='✓ Profile saved locally on your phone.';}catch(err){status.className='status error';status.textContent='Unable to save profile on this device.';}}
 function loadProfile(){try{const p=JSON.parse(localStorage.getItem('naat_studio_profile_v1')||'{}');id('profileName').value=p.name||'';id('profilePhone').value=p.phone||'';id('profileDob').value=p.dob||'';id('profileEmail').value=p.email||'';}catch(e){}}
+
+id('stageOutput').addEventListener('change',stageConnectionStatus);
+id('device').addEventListener('change',stageConnectionStatus);
 </script></body></html>
