@@ -106,7 +106,9 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 </section>
 <section class="panel" id="fxPanel"><h2>02 / DIGITAL DELAY PEDAL</h2><div class="pedal"><div class="pedalHead"><div class="knobs"><div class="knob"><h3>E.LEVEL</h3><div class="knobring"></div><div class="knobvalue" id="levelValue">60%</div><input type="range" id="level" min="0" max="100" value="60"/></div><div class="knob"><h3>FEEDBACK</h3><div class="knobring"></div><div class="knobvalue" id="fbValue">25%</div><input type="range" id="fb" min="0" max="94" value="25"/></div><div class="knob"><h3>TIME</h3><div class="knobring"></div><div class="knobvalue" id="timeValue">380 ms</div><input type="range" id="time" min="20" max="2000" step="10" value="380"/></div></div><div class="mode"><label>MODE — 11 LIVE AUDIO EFFECTS</label><select id="mode"><option>LOOP</option><option>ANALOG</option><option>STANDARD</option><option>TAPE</option><option>WARM</option><option>REVERSE</option><option>+RV</option><option>SHIM</option><option>MOD</option><option>WARP</option><option>GLT</option></select></div></div><div class="pedalBase"><strong>DD-8</strong><small>DIGITAL DELAY</small><div class="pedalFoot"><span class="led on" id="led"></span><button class="footswitch" id="bypassBtn" title="Toggle BYPASS"></button><span class="chip" id="bypassStatus">FX ON</span></div><small style="display:block;margin-top:14px">FOOTSWITCH — BYPASS</small></div></div></section>
 <section class="panel"><h2>PRESET HALL REVERB</h2><div class="toggle"><input type="checkbox" id="hallEnabled"/><span>HALL REVERB ON — vocal only (independent of DD Mode)</span></div><p class="tiny" id="sourceModeNote">Excel DD MODE: M / L / S and TEMPO are source references; DD-8 STANDARD with matching delay ms is the nearest available approximation. Imported values are not calibrated BOSS knob percentages.</p></section>
-<section class="panel"><h2>03 / NATIVE MICROPHONE & OUTPUT</h2><p class="help">Native Android AudioRecord captures your phone, USB, or supported Bluetooth microphone. Android—not the HTML browser—opens the mic.</p><label>SELECT INPUT MICROPHONE</label><select id="device"><option value="default">Android default microphone</option></select><div class="twocol"><button class="btn ghost" onclick="refreshDevices()">↻ REFRESH MIC LIST</button><button class="btn ghost" onclick="startMic()">🎙 START NATIVE MIC</button><button class="btn ghost" onclick="grantBluetooth()">BLUETOOTH PERMISSION</button><button class="btn ghost" onclick="stopMic()">STOP MIC</button></div><div style="height:11px"></div><div class="toggle"><input id="monitor" type="checkbox"/><span>LIVE monitoring into speaker/earbuds (OFF recommended for recording; Bluetooth can delay)</span></div><div class="line"></div><label>INPUT METER</label><div class="bar"><b id="meter"></b></div><div class="row" style="justify-content:space-between;margin-top:8px"><span class="tiny" id="meterNum">-∞ dBFS</span><span class="tiny" id="nativeStatus">MIC OFF</span></div><div style="height:14px"></div><label>VOCAL NOISE REDUCTION</label>
+<section class="panel"><h2>03 / NATIVE MICROPHONE & OUTPUT</h2><p class="help">Native Android AudioRecord captures your phone, USB, or supported Bluetooth microphone. Android—not the HTML browser—opens the mic.</p><label>SELECT INPUT MICROPHONE</label><select id="device"><option value="default">Android default microphone</option></select><div class="twocol"><button class="btn ghost" onclick="refreshDevices()">↻ REFRESH MIC LIST</button><button class="btn ghost" onclick="startMic()">🎙 START NATIVE MIC</button><button class="btn ghost" onclick="grantBluetooth()">BLUETOOTH PERMISSION</button><button class="btn ghost" onclick="stopMic()">STOP MIC</button></div><div style="height:11px"></div><div class="toggle"><input id="monitor" type="checkbox"/><span>LIVE monitoring into speaker/earbuds (OFF recommended for recording; Bluetooth can delay)</span></div>
+<div id="mobileWiredTestRow" style="display:none"><div class="toggle"><input id="mobileWiredDryTest" type="checkbox"/><span>⚡ WIRED DRY LATENCY TEST: Phone/connected mic with all DD-8 repeats temporarily bypassed.</span></div><p class="tiny">Use wired headphones/mixer at LOW volume; never monitor near a loud PA speaker. Switch OFF to hear presets again. Does not change saved presets.</p><div id="mobileWiredTestStatus" class="status">Connect wired output, turn LIVE monitoring ON, then start MIC.</div></div>
+<div class="line"></div><label>INPUT METER</label><div class="bar"><b id="meter"></b></div><div class="row" style="justify-content:space-between;margin-top:8px"><span class="tiny" id="meterNum">-∞ dBFS</span><span class="tiny" id="nativeStatus">MIC OFF</span></div><div style="height:14px"></div><label>VOCAL NOISE REDUCTION</label>
 <select id="noiseReduction"><option value="0">OFF — Original Sound</option><option value="1">LIGHT — Natural Voice</option><option value="2" selected>BALANCED — Recommended</option><option value="3">STRONG — Loud Background Noise</option></select>
 <div class="status" id="noiseStatus">Balanced vocal noise reduction ready. If Android NS is supported it activates when mic starts. Strong may soften sustained notes.</div>
 <label>NOISE GATE <span id="gateValue">−50 dB</span></label><input type="range" id="gate" min="-80" max="-20" value="-50"/><label>MASTER VOLUME <span id="masterValue">15%</span></label><input type="range" id="master" min="0" max="100" value="15"/><div class="status" id="status">READY • Select mic, then START NATIVE MIC.</div></section>
@@ -195,12 +197,15 @@ function openCategory(category){
  id('categoryHome').style.display='none';id('studioPage').style.display='block';document.querySelector('.footer').hidden=false;
  const m=category==='mehfil', b=category==='earbuds';
  id('bluetoothLive').style.display=b?'block':'none';
+ id('mobileWiredTestRow').style.display=!m&&!b?'block':'none';
  id('mehfilMixer').style.display=m?'block':'none';id('rawOption').style.display=m?'none':'flex';
  id('categoryBadge').textContent=m?'LIVE MEHFIL':b?'EARBUDS STUDIO':'MOBILE MIC STUDIO';
  id('categoryHelp').textContent=m?'USB INPUT 1: VOCAL + DD-8 • USB INPUT 2: CLEAN INSTRUMENTS • COMBINED RECORDING':b?'Speak into PHONE MIC and hear your voice LIVE on Bluetooth. Fast Direct Voice is ON by default to bypass app echo; Bluetooth speaker buffering cannot be removed.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
  id('recTitle').textContent=m?'04 / LIVE MEHFIL — COMBINED WAV RECORDER':b?'04 / EARBUDS NAAT WAV RECORDER':'04 / MOBILE NAAT WAV RECORDER';
  id('recordStatus').textContent=m?'READY • Two-channel USB input is required for combined recording.':'READY TO RECORD';
- id('monitor').checked=m||b;setMix();refreshDevices();if(b)refreshOutputs();if(m){
+ id('monitor').checked=m||b;
+ if(!m&&!b&&native&&native.wiredDryTest)native.wiredDryTest(id('mobileWiredDryTest').checked);
+ setMix();refreshDevices();if(b)refreshOutputs();if(m){
   if(native&&native.wiredDryTest)native.wiredDryTest(id('wiredDryTest').checked);
   onStageModeChange();refreshStageOutputs();
 }window.scrollTo(0,0);
@@ -228,6 +233,13 @@ function refreshKnobs(){id('levelValue').textContent=id('level').value+'%';id('f
 id('presetSearch').addEventListener('input',renderPresetLibrary);
 id('presetFilter').addEventListener('change',renderPresetLibrary);
 id('noiseReduction').addEventListener('change',()=>{if(native&&native.noiseReduction)native.noiseReduction(currentCategory==='earbuds'&&id('btDryTest').checked?0:+id('noiseReduction').value);});
+id('mobileWiredDryTest').addEventListener('change',()=>{
+ const on=id('mobileWiredDryTest').checked;
+ if(native&&native.wiredDryTest)native.wiredDryTest(on);
+ id('mobileWiredTestStatus').textContent=on?
+  '⚡ PHONE MIC WIRED DRY TEST ON — bypass DD-8 repeats. Compare audible Hello delay.':
+  '♫ WIRED DRY TEST OFF — selected DD-8 preset active.';
+});
 id('wiredDryTest').addEventListener('change',()=>{
  const on=id('wiredDryTest').checked;
  if(native&&native.wiredDryTest)native.wiredDryTest(on);
@@ -358,7 +370,10 @@ function startMic(){if(!native){showStatus('This must run inside the Android APK
   id('stageReady').textContent='STARTING • Requesting microphone permission and USB routing…';
   if(native.wiredDryTest)native.wiredDryTest(id('wiredDryTest').checked);
   native.startMehfil(id('device').value,true,out,id('stageMode').value==='stereo');
- }else native.start(id('device').value,id('monitor').checked);}
+ }else {
+  if(currentCategory==='mobile'&&native.wiredDryTest)native.wiredDryTest(id('mobileWiredDryTest').checked);
+  native.start(id('device').value,id('monitor').checked);
+ }}
 function stopMic(){if(native)native.stop();isRunning=false;id('liveBtn').textContent='START MIC';id('footStatus').textContent='MICROPHONE OFF';}
 function toggleLive(){isRunning?stopMic():startMic();}
 function startRec(){if(!native)return;native.recordStart(id('recordName').value,currentCategory!=='mehfil'&&id('recordRaw').checked);}
@@ -377,6 +392,7 @@ window.nativeEvent=(type,txt)=>{
  } else if(type==='noise'){id('noiseStatus').textContent=txt;
  } else if(type==='latency'){id('latencyStatus').textContent=txt;
    if(currentCategory==='mehfil')id('wiredLatencyStatus').textContent=txt;
+   if(currentCategory==='mobile'&&id('monitor').checked)id('mobileWiredTestStatus').textContent=txt;
  } else if(type==='route'){id('btRouteStatus').textContent=txt;showStatus(txt);
  } else if(type==='error'){if(currentCategory==='earbuds')id('btRouteStatus').textContent=txt;
  if(currentCategory==='mehfil'){lastStageError=txt;id('stageDiag').textContent=txt;id('stageReady').textContent='⚠ '+txt;id('stageReady').className='status error';}
