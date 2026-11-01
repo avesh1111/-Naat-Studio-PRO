@@ -54,6 +54,10 @@ public final class NativeAudioEngine {
     // should never be confused with actual mic-to-speaker transport latency.
     // Users can disable this in Bluetooth Studio to use their FX presets.
     private volatile boolean bluetoothDryTest = true;
+    // Diagnostics for wired/USB monitoring. Presets stay saved unchanged.
+    // Bypasses time-based effects in the active stage stream to separate
+    // hardware monitoring latency from deliberate DD-8 echo repeats.
+    private volatile boolean wiredDryTest = false;
     private long monitorFramesWritten = 0;
     private long outputDrops = 0;
     private AutomaticGainControl agc;
@@ -118,6 +122,12 @@ public final class NativeAudioEngine {
     void setFastLiveMode(boolean enabled) { fastLiveMode = enabled; }
     // Direct PCM soundcheck bypasses app DSP; Android/Bluetooth transport delay still exists.
     void setBluetoothDryTest(boolean enabled) { bluetoothDryTest = enabled; }
+    void setWiredDryTest(boolean enabled) {
+        wiredDryTest = enabled;
+        emit("latency", enabled
+            ? "WIRED DRY TEST ON • DD-8 echo/hall bypassed for monitoring. Listen for actual physical delay."
+            : "WIRED DRY TEST OFF • DD-8 effects restored. Presets unchanged.");
+    }
     boolean isRunning() { return running.get(); }
 
     synchronized void setNoiseReduction(int strength) {
@@ -280,6 +290,7 @@ public final class NativeAudioEngine {
         if (bluetoothPlayback) fastLiveMode = true;
         final boolean lowLatencyPath = doMonitor;
         final boolean btDry = bluetoothPlayback && bluetoothDryTest;
+        final boolean wiredStage = (mehfilMode || stageVocalOnly) && doMonitor;
         if (bluetoothPlayback && !doMonitor) {
             emit("error", "Enable LIVE monitoring to hear your processed voice over Bluetooth.");
             return;
@@ -334,7 +345,10 @@ public final class NativeAudioEngine {
             AudioRecord candidate = null;
             int workingRate = 48000;
             for (int rate : new int[]{48000, 44100}) {
-                for (int src : btDry
+                // Wired monitor prioritizes raw capture. VOICE_RECOGNITION and
+                // hardware voice DSP can add extra buffering on some Android devices.
+                // Bluetooth path is intentionally unchanged.
+                for (int src : (btDry || (lowLatencyPath && !bluetoothPlayback))
                     ? new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC}
                     : noiseStrength > 0 && !mehfil
                         ? new int[]{MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.UNPROCESSED}
@@ -368,7 +382,7 @@ public final class NativeAudioEngine {
             // The direct Bluetooth path must not even attach AGC, AEC or NS.
             // UNPROCESSED is best-effort; Android hardware may still impose preprocessing.
             platformNoiseActive = false;
-            if (!btDry) {
+            if (!btDry && !wiredStage) {
                 int sessionId = input.getAudioSessionId();
                 try { if (AutomaticGainControl.isAvailable()) { agc = AutomaticGainControl.create(sessionId); if (agc != null) agc.setEnabled(false); } } catch (Exception ignored) {}
                 try { if (AcousticEchoCanceler.isAvailable()) { aec = AcousticEchoCanceler.create(sessionId); if (aec != null) aec.setEnabled(false); } } catch (Exception ignored) {}
@@ -382,11 +396,14 @@ public final class NativeAudioEngine {
                     }
                 } catch (Exception ignored) { platformNoiseActive = false; }
             }
+            if (wiredStage)
+                emit("hint", "FAST WIRED CAPTURE: requested raw/unprocessed USB mic; Android platform AGC/AEC/NS omitted. Vocal software gate remains available in FX mode.");
             emit("noise", "Vocal Noise Reduction " +
                 (noiseStrength == 0 ? "OFF" : noiseStrength == 1 ? "LIGHT" :
                 noiseStrength == 2 ? "BALANCED" : "STRONG") + " • " +
                 (platformNoiseActive ? "Android NS ACTIVE + voice expander" :
-                    "vocal-only expander; Android NS not active") +
+                    wiredStage ? "FAST WIRED: Android effects bypassed; software expander in FX mode"
+                    : "vocal-only expander; Android NS not active") +
                 (mehfil ? " • instruments remain clean" : ""));
             if (chosen != null) {
                 if (!input.setPreferredDevice(chosen)) {
@@ -690,7 +707,7 @@ public final class NativeAudioEngine {
                     for (int i = 0; i < valid; i += 2) {
                         float vocal = pcmIn[i] / 32768f;
                         float instrument = pcmIn[i + 1] / 32768f;
-                        float affectedVocal = process(vocal) * (float)vocalVolume;
+                        float affectedVocal = (wiredDryTest ? vocal : process(vocal)) * (float)vocalVolume;
                         float dryInstrument = instrument * (float)instrumentVolume;
                         float combined = (float)Math.tanh((affectedVocal + dryInstrument) * .85);
                         short wave = (short)(clamp(combined, -1, 1) * 32767);
@@ -705,8 +722,10 @@ public final class NativeAudioEngine {
                         float original = pcmIn[i] / 32768f;
                         // An honest dry test: skip ALL app effects to isolate transport latency.
                         // Do not claim this makes Bluetooth A2DP instantaneous.
-                        float affected = (bluetoothPlayback && bluetoothDryTest)
-                            ? original : process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
+                        float affected = ((bluetoothPlayback && bluetoothDryTest) ||
+                                (!bluetoothPlayback && wiredDryTest && monitor))
+                            ? original * (stageVocalOnly ? (float)vocalVolume : 1f)
+                            : process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
                         short processed = (short)(clamp(affected, -1, 1) * 32767);
                         pcmOut[i] = (short)(clamp(affected * master, -1, 1) * 32767);
                         chunk.putShort(recordRaw ? pcmIn[i] : processed);
