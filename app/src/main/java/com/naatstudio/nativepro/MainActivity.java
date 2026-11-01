@@ -171,6 +171,9 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void noiseReduction(int strength) { if (engine != null) engine.setNoiseReduction(strength); }
         @JavascriptInterface public void fastLive(boolean enabled) { if (engine != null) engine.setFastLiveMode(enabled); }
         @JavascriptInterface public void bluetoothDryTest(boolean enabled) { if (engine != null) engine.setBluetoothDryTest(enabled); }
+        @JavascriptInterface public void wiredDryTest(boolean enabled) {
+            if (engine != null) engine.setWiredDryTest(enabled);
+        }
         @JavascriptInterface public String outputs() { return engine == null ? "[]" : engine.audioOutputs().toString(); }
         @JavascriptInterface public void mix(double vocal, double instrument) { if (engine != null) engine.setMixLevels(vocal, instrument); }
         @JavascriptInterface public void stop() { runOnUiThread(() -> { if (liveService != null) liveService.stopLive(); }); }
