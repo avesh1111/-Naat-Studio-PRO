@@ -69,18 +69,19 @@ body{background:#061426;color:#e7f7ff;padding-bottom:105px}main{padding:10px}hea
 <section id="settingsPage" class="panel" style="display:none"><button class="btn ghost" onclick="showHome()">← BACK</button><h2>SETTINGS</h2><button class="settingsTile" onclick="showProfile()">♙　My Profile　›</button><button class="settingsTile" onclick="openPresets()">♫　Preset Library　›</button><button class="settingsTile" onclick="openCategory('mehfil')">🎤　Live Mehfil　›</button><button class="settingsTile" onclick="openCategory('earbuds')">🎧　Bluetooth Studio　›</button><button class="settingsTile" onclick="openCategory('mobile')">📱　Mobile Mic Studio　›</button></section><div id="studioPage" style="display:none">
 <section class="panel"><div class="row" style="justify-content:space-between"><button class="btn ghost" onclick="showHome()">← ALL CATEGORIES</button><span class="chip" id="categoryBadge">MOBILE STUDIO</span></div><p class="catlead" id="categoryHelp"></p></section>
 <section id="mehfilMixer" class="panel" style="display:none"><h2>LIVE MEHFIL / DUAL INPUT MIXER</h2>
-<p class="help">Choose EXTERNAL MIC for Android-detected USB or compatible 3.5mm headset mic. If your adapter is input-only, use the PHONE MIC → WIRED MIXER soundcheck with a separate USB/wired audio output. Two-input stereo needs a USB interface with independent capture channels.</p>
+<p class="help">No USB sound card? Choose REHEARSAL to test your phone mic, DD-8 presets and WAV recorder WITHOUT a speaker output. For real stage PA audio, select an external/phone mic wired mode and connect a USB/wired output to your mixer. A plain OTG cable does not convert a 3.5mm microphone into USB audio.</p>
 <label>STAGE INPUT MODE</label>
 <select id="stageMode" onchange="onStageModeChange()">
+<option value="rehearsal" selected>0 — REHEARSAL • PHONE MIC + WAV • SPEAKER OFF (NO SOUNDCARD)</option>
 <option value="mono">1 — EXTERNAL MIC SOUNDCHECK (USB / 3.5mm headset; mono)</option>
 <option value="phone">2 — PHONE MIC → WIRED MIXER (mono soundcheck)</option>
 <option value="stereo">3 — MIC + INSTRUMENTS (two-channel USB; combined WAV)</option>
 </select>
-<label>PA / MIXER AUDIO OUTPUT</label>
-<select id="stageOutput"><option value="default">Android default output (check routing!)</option></select>
-<div class="twocol"><button class="btn ghost" onclick="refreshDevices();refreshStageOutputs()">↻ REFRESH AUDIO DEVICES</button><button class="btn" onclick="startMic()">▶ START LIVE MEHFIL MIC</button></div>
+<div id="stageOutputRow"><label>PA / MIXER AUDIO OUTPUT</label>
+<select id="stageOutput"><option value="default">Android default output (check routing!)</option></select></div>
+<div class="twocol"><button class="btn ghost" onclick="refreshDevices();refreshStageOutputs()">↻ REFRESH AUDIO DEVICES</button><button class="btn" id="stageStartButton" onclick="startMic()">▶ START MEHFIL REHEARSAL MIC</button></div>
 <div class="status" id="stageReady" role="status" aria-live="polite">CHECKING • Select a mic input and USB/wired mixer output, then REFRESH.</div>
-<div class="mixrow" style="margin-top:12px"><label for="wiredDryTest">⚡ FAST WIRED DRY LATENCY TEST — no echo/reverb repeats</label><div class="toggle"><input type="checkbox" id="wiredDryTest"/><span>ON = direct processed-mic bypass for diagnosing actual wired delay; OFF = use your saved DD-8 preset</span></div><div class="tiny">For soundcheck only. Does not change or overwrite CH1–CH5 or custom presets. Start with PA gain low; disable interface direct monitoring to avoid doubled sound.</div></div>
+<div class="mixrow" id="stageDryControls" style="margin-top:12px"><label for="wiredDryTest">⚡ FAST WIRED DRY LATENCY TEST — no echo/reverb repeats</label><div class="toggle"><input type="checkbox" id="wiredDryTest"/><span>ON = direct processed-mic bypass for diagnosing actual wired delay; OFF = use your saved DD-8 preset</span></div><div class="tiny">For soundcheck only. Does not change or overwrite CH1–CH5 or custom presets. Start with PA gain low; disable interface direct monitoring to avoid doubled sound.</div></div>
 <div class="status" id="wiredLatencyStatus" role="status">WIRED LATENCY: Start MIC to view Android playback queue and underruns. This is not a mic-to-speaker latency measurement.</div>
 <div class="status" id="stageDiag" role="status" aria-live="polite">CONNECT: Mic → interface MIC IN; interface USB → OTG → phone; interface LINE OUT → mixer LINE IN → PA. Select USB output before starting. Keep PA volume very low.</div>
 <p class="tiny" id="stageModeHelp">MIC ONLY SOUNDCHECK records effected vocal only. For instruments and combined WAV select stereo after checking microphone and output.</p>
@@ -201,9 +202,9 @@ function openCategory(category){
  id('mobileWiredTestRow').style.display=!m&&!b?'block':'none';
  id('mehfilMixer').style.display=m?'block':'none';id('rawOption').style.display=m?'none':'flex';
  id('categoryBadge').textContent=m?'LIVE MEHFIL':b?'EARBUDS STUDIO':'MOBILE MIC STUDIO';
- id('categoryHelp').textContent=m?'USB / 3.5mm HEADSET MIC OR PHONE MIC SOUNDCHECK → WIRED PA • USB STEREO INPUT FOR 2-CHANNEL MIXING':b?'Speak into PHONE MIC and hear your voice LIVE on Bluetooth. Fast Direct Voice is ON by default to bypass app echo; Bluetooth speaker buffering cannot be removed.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
+ id('categoryHelp').textContent=m?'REHEARSAL: PHONE MIC + DD-8 WAV (SPEAKER OFF) • EXTERNAL USB/3.5mm OR WIRED PA FOR LIVE MEHFIL':b?'Speak into PHONE MIC and hear your voice LIVE on Bluetooth. Fast Direct Voice is ON by default to bypass app echo; Bluetooth speaker buffering cannot be removed.':'Phone mic recording with DD-8 effects. External instruments are not mixed in this category.';
  id('recTitle').textContent=m?'04 / LIVE MEHFIL — COMBINED WAV RECORDER':b?'04 / EARBUDS NAAT WAV RECORDER':'04 / MOBILE NAAT WAV RECORDER';
- id('recordStatus').textContent=m?'READY • Choose a mic soundcheck or two-channel USB for combined recording.':'READY TO RECORD';
+ id('recordStatus').textContent=m?'READY • Rehearsal uses phone mic and saves WAV with PA speaker OFF.':'READY TO RECORD';
  id('monitor').checked=m||b;
  if(!m&&!b&&native&&native.wiredDryTest)native.wiredDryTest(id('mobileWiredDryTest').checked);
  setMix();refreshDevices();if(b)refreshOutputs();if(m){
@@ -257,13 +258,22 @@ id('btDryTest').addEventListener('change',()=>{
 });
 function onStageModeChange(){
  const mode=id('stageMode').value;
- const stereo=mode==='stereo',phone=mode==='phone';
- id('stageModeHelp').textContent=stereo?
+ const stereo=mode==='stereo',phone=mode==='phone',rehearsal=mode==='rehearsal';
+ id('stageOutputRow').style.display=rehearsal?'none':'block';
+ id('stageDryControls').style.display=rehearsal?'none':'block';
+ id('wiredLatencyStatus').style.display=rehearsal?'none':'block';
+ id('stageStartButton').textContent=rehearsal?'▶ START REHEARSAL MIC (NO SPEAKER)':'▶ START LIVE MEHFIL MIC';
+ id('monitor').checked=!rehearsal;
+ id('monitor').disabled=rehearsal;
+ id('stageModeHelp').textContent=rehearsal?
+ 'REHEARSAL: Android phone microphone → DD-8 vocal processing → WAV only. No live audio to any speaker. Start mic, then START RECORDING. Your external 3.5mm mic is not used.':
+ stereo?
  '2-INPUT USB STEREO: INPUT LEFT = Vocal Mic + DD-8; RIGHT = dry instruments. Requires USB interface with 2 independent capture channels.':
  phone?
- 'PHONE MIC SOUND CHECK: use the Android built-in mic and a connected USB/wired LINE OUT to mixer. PA volume LOW; feedback risk. External 3.5mm mic is NOT used in this mode.':
- 'EXTERNAL MIC SOUND CHECK: select an Android-detected USB or 3.5mm headset mic. A TRRS microphone needs a compatible input adapter. Instruments connect to the mixer separately.';
- id('recordStatus').textContent=stereo?'READY • Stereo USB mic+instruments combined WAV':
+ 'PHONE MIC WIRED SOUND CHECK: built-in phone mic → USB/wired mixer LINE OUT. Low PA volume; feedback risk. External 3.5mm mic not used.':
+ 'EXTERNAL MIC WIRED SOUND CHECK: Android-detected USB or compatible 3.5mm headset mic and separate wired PA output are required.';
+ id('recordStatus').textContent=rehearsal?'READY • Start rehearsal mic; then tap START RECORDING for effected WAV. Speaker output OFF.':
+ stereo?'READY • Stereo USB mic+instruments combined WAV':
  phone?'READY • Phone microphone mono WAV soundcheck':'READY • External microphone mono WAV soundcheck';
  refreshDevices();
  if(currentCategory==='mehfil')refreshStageOutputs();
@@ -271,14 +281,18 @@ function onStageModeChange(){
 function stageConnectionStatus(){
  if(currentCategory!=='mehfil')return false;
  const msg=id('stageReady');
- if(!native||!native.microphones||!native.outputs){
-  msg.className='status error';msg.textContent='⚠ Android audio service not ready. Try REFRESH AUDIO DEVICES.';return false;
+ if(!native||!native.microphones){
+  msg.className='status error';
+  msg.textContent='⚠ Native Android microphone service not ready. Restart app or REFRESH AUDIO DEVICES.';
+  return false;
  }
  try{
-  const ins=JSON.parse(native.microphones()),outs=JSON.parse(native.outputs());
+  const ins=JSON.parse(native.microphones());
+  const mode=id('stageMode').value,rehearsal=mode==='rehearsal';
+  const outs=(!rehearsal&&native.outputs)?JSON.parse(native.outputs()):[];
   const safe=outs.filter(d=>d.kind==='usb'||d.kind==='wired');
-  const mode=id('stageMode').value;
-  const compatible=(d)=>mode==='phone'?d.kind==='phone':
+  const compatible=(d)=>rehearsal?d.kind==='phone'||d.id==='default':
+    mode==='phone'?d.kind==='phone':
     mode==='stereo'?d.kind==='usb':d.kind==='usb'||d.kind==='wired';
   const selectedInput=ins.find(d=>d.id===id('device').value&&compatible(d));
   const selectedOutput=safe.find(d=>d.id===id('stageOutput').value);
@@ -287,18 +301,23 @@ function stageConnectionStatus(){
   const stereoUnsupported=mode==='stereo'&&selectedInput&&knownCounts&&!knownCounts.some(v=>Number(v)>=2);
   const issues=[];
   if(!selectedInput){
-   issues.push(mode==='phone'?
-    'PHONE MIC NOT DETECTED — allow Microphone permission, reconnect adapter and REFRESH.':
+   issues.push(rehearsal?
+    'ANDROID MICROPHONE UNAVAILABLE — allow NAAT STUDIO microphone permission and refresh.':
+    mode==='phone'?
+    'PHONE MIC NOT DETECTED — allow Microphone permission and refresh.':
     mode==='stereo'?
     'STEREO USB MIC INPUT MISSING — connect a 2-channel USB audio interface via OTG.':
-    'EXTERNAL MIC INPUT MISSING — a plain OTG cable cannot read a 3.5mm mic. Use a compatible USB audio input adapter or 3.5mm TRRS headset adapter.');
+    'EXTERNAL MIC INPUT MISSING — plain OTG cannot read 3.5mm jack. Use USB sound card or compatible TRRS mic adapter.');
   }
-  if(!selectedOutput)issues.push('PA OUTPUT MISSING — connect USB audio LINE OUT or wired headset/mixer output. Phone speaker is blocked for feedback safety.');
-  if(stereoUnsupported)issues.push('2-channel USB capture unavailable — use EXTERNAL MIC or PHONE MIC mono soundcheck.');
-  const ready=!issues.length;
+  if(!rehearsal&&!selectedOutput)
+   issues.push('PA OUTPUT MISSING — connect USB LINE OUT or wired headset/mixer output; phone speaker is blocked for feedback safety.');
+  if(stereoUnsupported)
+   issues.push('2-channel USB capture unavailable — use mono external or phone soundcheck.');
+  const ready=issues.length===0;
   msg.className='status'+(ready?'':' error');
   msg.textContent=ready?
-   '✓ READY FOR LOW-VOLUME SOUNDCHECK • '+selectedInput.name+' → '+selectedOutput.name+' • '+(mode==='phone'?'PHONE MIC':'EXTERNAL MIC')+' input.':
+   rehearsal?'✓ REHEARSAL READY • '+selectedInput.name+' • Mic → DD-8 → WAV. SPEAKER OFF. Tap START REHEARSAL MIC.':
+   '✓ READY FOR LOW-VOLUME PA SOUNDCHECK • '+selectedInput.name+' → '+selectedOutput.name:
    '⚠ '+issues.join(' ');
   return ready;
  }catch(e){
@@ -308,6 +327,11 @@ function stageConnectionStatus(){
 }
 function refreshStageOutputs(){
  if(!native||!native.outputs)return;
+ if(id('stageMode').value==='rehearsal'){
+  id('stageDiag').textContent='✓ REHEARSAL / RECORDING ONLY: no USB sound card required and NO LIVE SPEAKER OUTPUT. To send voice to PA, change mode and connect a compatible audio interface.';
+  stageConnectionStatus();
+  return;
+ }
  try{
   const found=JSON.parse(native.outputs());
   const safe=found.filter(d=>d.kind==='usb'||d.kind==='wired');
@@ -319,8 +343,8 @@ function refreshStageOutputs(){
   if(safe.some(d=>d.id===old))sel.value=old;
   else {const usb=safe.find(d=>d.kind==='usb');sel.value=(usb||safe[0])?.id||'default';}
   id('stageDiag').textContent=!safe.length?
-   '⚠ No USB/wired output detected. Connect an Android-compatible USB interface with LINE OUT or a wired mixer output and REFRESH. A mic-only USB device cannot provide speaker output.':
-   '✓ Output detected. Connect interface LINE OUT to mixer LINE IN. Test MIC ONLY first with LOW PA volume.';
+   '⚠ No USB/wired output detected. Connect an Android-compatible USB audio interface with LINE OUT or wired mixer output. For recording without hardware, select REHEARSAL mode.':
+   '✓ Wired output detected. Connect interface LINE OUT to mixer LINE IN. Start with PA gain LOW.';
   stageConnectionStatus();
  }catch(e){id('stageDiag').textContent='Cannot list audio outputs: '+e.message;stageConnectionStatus();}
 }
@@ -331,7 +355,7 @@ function refreshDevices(){
   const found=JSON.parse(native.microphones());
   const mode=id('stageMode').value;
   const usable=found.filter(d=>currentCategory==='mehfil'?
-    (mode==='stereo'?d.kind==='usb':mode==='phone'?d.kind==='phone':d.kind==='usb'||d.kind==='wired'):
+    (mode==='rehearsal'?d.kind==='phone'||d.id==='default':mode==='stereo'?d.kind==='usb':mode==='phone'?d.kind==='phone':d.kind==='usb'||d.kind==='wired'):
     currentCategory==='earbuds'?d.kind==='phone':
     currentCategory==='mobile'?d.kind==='phone'||d.kind==='wired'||d.kind==='usb'||d.id==='default':true);
   const sel=id('device');sel.innerHTML='';
@@ -343,7 +367,7 @@ function refreshDevices(){
   if(usable.length===0){
    const o=document.createElement('option');o.value='';
    o.textContent=currentCategory==='mehfil'?
-     (mode==='phone'?'Built-in phone mic not found':
+     (mode==='rehearsal'?'Android microphone unavailable — check app microphone permission':mode==='phone'?'Built-in phone mic not found':
       mode==='stereo'?'Connect stereo USB audio interface via OTG':
       'No compatible external mic: USB or 3.5mm headset input adapter required'):
       currentCategory==='earbuds'?'Phone microphone unavailable':'No microphone detected';
@@ -351,8 +375,8 @@ function refreshDevices(){
    showStatus(o.textContent,true);
   }else{
    if(usable.some(d=>d.id===selected))sel.value=selected;
-   else if(currentCategory!=='mehfil'&&usable.some(d=>d.id==='default'))sel.value='default';
-   showStatus('Mic list refreshed. Choose an input and a wired output before starting.');
+   else if((currentCategory!=='mehfil'||mode==='rehearsal')&&usable.some(d=>d.id==='default'))sel.value='default';
+   showStatus(mode==='rehearsal'&&currentCategory==='mehfil'?'Rehearsal microphone ready. Speaker output remains OFF.':'Mic list refreshed. Choose input and wired output before starting.');
   }
  }catch(e){showStatus('Failed to list microphones: '+e.message,true);}
  if(currentCategory==='mehfil')stageConnectionStatus();
@@ -387,18 +411,28 @@ function startBluetoothLive(){
  native.startBluetoothLive(builtIn.id,selected);
 }
 function grantBluetooth(){if(native)native.requestBluetooth();else showStatus('Only available inside the native Android APK.',true);}
-function startMic(){if(!native){showStatus('This must run inside the Android APK.',true);return;}
+function startMic(){
+ if(!native){showStatus('Native Android APK required for audio.',true);return;}
  if(currentCategory==='mehfil'&&!stageConnectionStatus()){
   const err=id('stageReady').textContent;showStatus(err,true);
   id('stageReady').scrollIntoView({behavior:'smooth',block:'center'});return;
  }
- showStatus('Requesting Android native microphone…');
- if(!id('device').value){showStatus('Choose a detected microphone or REFRESH MIC LIST.',true);return;}
+ if(!id('device').value){
+  showStatus('No microphone. Check permission and REFRESH AUDIO DEVICES.',true);return;
+ }
  if(native.noiseReduction)native.noiseReduction(+id('noiseReduction').value);
  if(currentCategory==='mehfil'){
   lastStageError='';
+  const rehearsal=id('stageMode').value==='rehearsal';
+  if(rehearsal){
+   // SAFETY: no PA monitoring and no AudioTrack. Record only.
+   id('stageReady').textContent='STARTING REHEARSAL MIC • speaker OFF • tap START RECORDING after MIC CONNECTED.';
+   if(native.wiredDryTest)native.wiredDryTest(false);
+   native.startMehfil(id('device').value,false,'default',false);
+   return;
+  }
   if(!id('monitor').checked){
-   const err='Enable LIVE monitoring only after checking PA gain.';
+   const err='Turn on LIVE monitoring only after safe LOW-volume PA connection.';
    showStatus(err,true);id('stageDiag').textContent='⚠ '+err;
    id('stageDiag').scrollIntoView({behavior:'smooth',block:'center'});return;
   }
@@ -410,10 +444,11 @@ function startMic(){if(!native){showStatus('This must run inside the Android APK
   id('stageReady').textContent='STARTING • Checking microphone permission and wired speaker routing…';
   if(native.wiredDryTest)native.wiredDryTest(id('wiredDryTest').checked);
   native.startMehfil(id('device').value,true,out,id('stageMode').value==='stereo');
- }else {
+ }else{
   if(currentCategory==='mobile'&&native.wiredDryTest)native.wiredDryTest(id('mobileWiredDryTest').checked);
   native.start(id('device').value,id('monitor').checked);
- }}
+ }
+}
 function stopMic(){if(native)native.stop();isRunning=false;id('liveBtn').textContent='START MIC';id('footStatus').textContent='MICROPHONE OFF';}
 function toggleLive(){isRunning?stopMic():startMic();}
 function startRec(){if(!native)return;native.recordStart(id('recordName').value,currentCategory!=='mehfil'&&id('recordRaw').checked);}
@@ -426,6 +461,10 @@ window.nativeEvent=(type,txt)=>{
  if(type==='status'){
    isRunning=txt.startsWith('MIC CONNECTED');id('nativeStatus').textContent=txt;id('liveBtn').textContent=isRunning?'STOP MIC':'START MIC';id('footStatus').textContent=isRunning?'MICROPHONE CONNECTED':'MICROPHONE OFF';
    if(isRunning) lastStageError='';
+   if(currentCategory==='mehfil'&&isRunning&&id('stageMode').value==='rehearsal'){
+     id('stageReady').className='status';
+     id('stageReady').textContent='✓ REHEARSAL MIC ACTIVE • SPEAKER OFF • Tap START RECORDING to save DD-8 WAV.';
+   }
    if(currentCategory==='mehfil'&&!isRunning&&lastStageError)showStatus(lastStageError,true);
    else showStatus(txt);
  } else if(type==='stage'){id('stageDiag').textContent=txt;
