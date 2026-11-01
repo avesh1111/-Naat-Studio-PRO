@@ -501,9 +501,13 @@ public final class NativeAudioEngine {
                 (mehfilMode ? "MEHFIL USB STEREO" : stageVocalOnly ? "MEHFIL USB MIC SOUNDCHECK" : bluetoothPlayback ? "PHONE MIC → BLUETOOTH OUTPUT" : "Native AudioRecord") +
                 " • " + sampleRate + " Hz" + (chosenBluetooth ? " • Bluetooth microphone requested" : ""));
             if (lowLatencyPath && !bluetoothPlayback) {
-                emit("latency", "WIRED LOW LATENCY requested • " + sampleRate + " Hz • " +
+                emit("latency", "FAST WIRED • " + sampleRate + " Hz • " +
                     (1000 * output.getBufferSizeInFrames() / sampleRate) +
-                    " ms app playback buffer • USB/interface delay not measured");
+                    " ms accepted playback buffer • input buffer " +
+                    input.getBufferSizeInFrames() + " frames • " +
+                    (output.getPerformanceMode() == AudioTrack.PERFORMANCE_MODE_LOW_LATENCY
+                      ? "Android LOW LATENCY output active" : "Android low latency output NOT granted") +
+                    " • physical mic-to-speaker delay not yet measured");
             }
             if (bluetoothPlayback) {
                 emit("hint", bluetoothDryTest
@@ -723,7 +727,7 @@ public final class NativeAudioEngine {
                         // An honest dry test: skip ALL app effects to isolate transport latency.
                         // Do not claim this makes Bluetooth A2DP instantaneous.
                         float affected = ((bluetoothPlayback && bluetoothDryTest) ||
-                                (!bluetoothPlayback && wiredDryTest && monitor))
+                                (!bluetoothPlayback && wiredDryTest && monitor && (mehfil || stageVocalOnly)))
                             ? original * (stageVocalOnly ? (float)vocalVolume : 1f)
                             : process(original) * (stageVocalOnly ? (float)vocalVolume : 1f);
                         short processed = (short)(clamp(affected, -1, 1) * 32767);
@@ -755,20 +759,27 @@ public final class NativeAudioEngine {
                     }
                 }
                 tick += valid;
-                if (bluetoothPlayback && monitor) {
+                if (monitor) {
                     liveDiagFrames += valid / (mehfil ? 2 : 1);
                     if (liveDiagFrames >= sampleRate) {
                         liveDiagFrames = 0;
-                        // Playback-head queue is only an app-side estimate, NOT mic-to-ear latency.
+                        // Playback-head queue: internal app estimate, not real acoustic
+                        // latency, which also includes mic, USB and mixer pipelines.
                         long playHead = Integer.toUnsignedLong(output.getPlaybackHeadPosition());
                         long queuedFrames = Math.max(0, monitorFramesWritten - playHead);
                         long appQueueMs = Math.min(60000, queuedFrames * 1000L / sampleRate);
                         String routedName = outputRouteName;
-                        emit("latency", "APP queue estimate " + appQueueMs + " ms (target ≤100 ms) • " +
-                            (appQueueMs > 100 ? "APP QUEUE ABOVE TARGET • " : "") +
-                            "underruns " + output.getUnderrunCount() + " • dropped chunks " +
-                            outputDrops + " • " + routedName +
-                            " • speaker/Bluetooth transmission NOT measured (total delay unknown)");
+                        if (bluetoothPlayback) {
+                            emit("latency", "BLUETOOTH APP queue ~" + appQueueMs + " ms • " +
+                                "underruns " + output.getUnderrunCount() + " • dropped chunks " +
+                                outputDrops + " • " + routedName +
+                                " • wireless transport/total latency NOT measured");
+                        } else {
+                            emit("latency", "WIRED APP queue ~" + appQueueMs + " ms • " +
+                                "buffer " + (output.getBufferSizeInFrames() * 1000L / sampleRate) + " ms • " +
+                                "underruns " + output.getUnderrunCount() + " • " + routedName +
+                                " • actual mic-to-speaker delay includes interface/mixer, NOT measured");
+                        }
                     }
                 }
                 if (tick > sampleRate / 8 * (mehfil ? 2 : 1)) {
