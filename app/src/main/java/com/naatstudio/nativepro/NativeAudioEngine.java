@@ -212,13 +212,13 @@ public final class NativeAudioEngine {
                     (isBluetoothPlaybackType(d.getType()) ? " (Bluetooth media output)" : " (wired / speaker)"));
                 o.put("kind", isBluetoothPlaybackType(d.getType()) ? "bt" :
                     (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ? "phone" :
-                    (d.getType() == AudioDeviceInfo.TYPE_USB_DEVICE || d.getType() == AudioDeviceInfo.TYPE_USB_HEADSET) ? "usb" :
-                    (d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET) ? "wired" : "other"));
+                    (d.getType() == AudioDeviceInfo.TYPE_USB_DEVICE || d.getType() == AudioDeviceInfo.TYPE_USB_HEADSET || d.getType() == AudioDeviceInfo.TYPE_USB_ACCESSORY) ? "usb" :
+                    (d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET || d.getType() == AudioDeviceInfo.TYPE_LINE_ANALOG || d.getType() == AudioDeviceInfo.TYPE_LINE_DIGITAL) ? "wired" : "other"));
                 o.put("type", d.getType());
                 found.put(o);
             }
         } catch (Exception ex) {
-            emit("hint", "Bluetooth output list unavailable. Allow Nearby devices permission, then refresh.");
+            emit("hint", "Audio output enumeration failed: " + ex.getClass().getSimpleName() + ": " + ex.getMessage());
         }
         return found;
     }
