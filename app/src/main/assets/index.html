@@ -308,6 +308,12 @@ id('btDryTest').addEventListener('change',()=>{
  'NAAT FX ON: app delay/echo repeats restored. Bluetooth transport delay remains.';
 });
 function onStageModeChange(){
+ // A mode selector is a real routing change: stop the previous stream first.
+ // In particular REHEARSAL must never leave old PA playback running.
+ if(isRunning){
+  stopMic();
+  showStatus('Stage mode changed. Previous mic / PA route stopped for safety.');
+ }
  const mode=id('stageMode').value;
  const stereo=mode==='stereo',phone=mode==='phone',rehearsal=mode==='rehearsal';
  id('stageOutputRow').style.display=rehearsal?'none':'block';
