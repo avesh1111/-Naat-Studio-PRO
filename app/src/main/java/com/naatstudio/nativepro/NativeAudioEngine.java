@@ -237,6 +237,14 @@ public final class NativeAudioEngine {
         bluetoothPlayback = false;
         outputRouteName = "not confirmed";
         requestedLowLatencyFrames = 0;
+        // Live stage monitoring must never silently fall back to phone speaker.
+        // The user needs a physical LINE/wired route to the mixer/PA.
+        if (mehfilMode || stageVocalOnly) {
+            if (requestedOutput == null || "default".equals(requestedOutput)) {
+                emit("error", "LIVE MEHFIL OUTPUT MISSING: connect/select USB audio interface LINE OUT or wired mixer output and tap REFRESH.");
+                return;
+            }
+        }
         if (requestedOutput != null && !requestedOutput.equals("default")) {
             try {
                 for (AudioDeviceInfo d : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
@@ -251,8 +259,19 @@ public final class NativeAudioEngine {
                 return;
             }
             if (requestedPlaybackDevice == null) {
-                emit("error", "Selected audio output disconnected. Reconnect the USB interface or speaker and refresh.");
+                emit("error", "Selected audio output disconnected. Reconnect USB interface or wired mixer and REFRESH.");
                 return;
+            }
+            if (mehfilMode || stageVocalOnly) {
+                int stageType = requestedPlaybackDevice.getType();
+                boolean stageWired = stageType == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                    stageType == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                    stageType == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                    stageType == AudioDeviceInfo.TYPE_WIRED_HEADSET;
+                if (!stageWired) {
+                    emit("error", "LIVE MEHFIL PA OUTPUT UNSAFE: select USB LINE OUT or wired mixer, not phone or Bluetooth speaker.");
+                    return;
+                }
             }
         }
         // In Bluetooth Live ALWAYS choose the fastest app-owned path. The user must
